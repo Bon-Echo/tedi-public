@@ -84,7 +84,7 @@ async def send_session_output_email(
     Files:
         - TDD as DOCX
         - CLAUDE.md as .md attachment
-        - Skills file as .md attachment
+        - Skills file as .yaml attachment
         - Context file as .md attachment
 
     Args:
@@ -124,7 +124,7 @@ async def send_session_output_email(
     _attach_text(msg, claude_md_content.encode(), "CLAUDE.md")
 
     # Attach skills file
-    _attach_text(msg, skills_content.encode(), f"{safe_name}-skills.md")
+    _attach_text(msg, skills_content.encode(), f"{safe_name}-skills.yaml")
 
     # Attach context file
     _attach_text(msg, context_content.encode(), f"{safe_name}-context.md")
