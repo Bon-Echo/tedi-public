@@ -8,10 +8,14 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
 from app.database import init_db, close_db
-from app.routers import health
+from app.middleware.rate_limit import limiter
+from app.routers import health, signup, session
 from app.schemas import ErrorResponse
 
 logger = structlog.get_logger(__name__)
@@ -72,6 +76,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Rate limiter state
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -117,6 +126,8 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health.router)
+    app.include_router(signup.router)
+    app.include_router(session.router)
 
     return app
 
