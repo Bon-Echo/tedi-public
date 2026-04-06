@@ -18,6 +18,10 @@ from app.middleware.rate_limit import limiter
 from app.routers import health, signup, session, browser_ws
 from app.schemas import ErrorResponse
 from app.services.browser import BrowserService
+from app.services.claude import ClaudeService
+from app.services.elevenlabs import ElevenLabsService
+from app.services.orchestrator import Orchestrator
+from app.services.session_service import SessionService
 
 logger = structlog.get_logger(__name__)
 
@@ -59,7 +63,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await init_db()
 
-    app.state.browser_service = BrowserService()
+    browser_service = BrowserService()
+    claude_service = ClaudeService()
+    elevenlabs_service = ElevenLabsService()
+    session_service = SessionService()
+    orchestrator = Orchestrator(
+        browser_service=browser_service,
+        claude_service=claude_service,
+        elevenlabs_service=elevenlabs_service,
+        session_service=session_service,
+    )
+
+    app.state.browser_service = browser_service
+    app.state.orchestrator = orchestrator
 
     yield
 
