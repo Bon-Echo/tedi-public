@@ -1,4 +1,7 @@
-from pydantic import BaseModel
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel, EmailStr
 
 
 class ErrorResponse(BaseModel):
@@ -9,3 +12,30 @@ class ErrorResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str = "1.0.0"
+
+
+# --- Signup ---
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+
+
+class SignupCreatedResponse(BaseModel):
+    status: str = "created"
+    sessionToken: str
+    roomUrl: str
+
+
+class SignupWaitlistedResponse(BaseModel):
+    status: str = "waitlisted"
+    message: str
+    position: int
+
+
+# --- Session ---
+
+class SessionResponse(BaseModel):
+    id: uuid.UUID
+    status: str
+    startedAt: datetime | None = None
+    timeoutAt: datetime | None = None
