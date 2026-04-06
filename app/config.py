@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     # SES
     SES_FROM_EMAIL: str = "tedi@bonecho.ai"
     SES_REGION: str = "us-east-1"
+    OUTPUT_RECIPIENTS: str = "labeeb@bonecho.ai,deep@bonecho.ai"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://tedi:password@localhost:5432/tedi_public"
@@ -51,6 +52,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]
+
+    @property
+    def output_recipients_list(self) -> list[str]:
+        return [o.strip() for o in self.OUTPUT_RECIPIENTS.split(",")]
 
 
 settings = Settings()
