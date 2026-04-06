@@ -28,10 +28,11 @@ RUN groupadd --gid 1000 appuser && \
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application code and static assets
+# Copy application code
 WORKDIR /app
 COPY ./app ./app
-COPY ./static ./static
+COPY ./alembic ./alembic
+COPY alembic.ini .
 
 # Switch to non-root user
 USER appuser
