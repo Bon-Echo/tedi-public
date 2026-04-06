@@ -33,6 +33,7 @@ WORKDIR /app
 COPY ./app ./app
 COPY ./alembic ./alembic
 COPY alembic.ini .
+COPY ./static ./static
 
 # Switch to non-root user
 USER appuser
