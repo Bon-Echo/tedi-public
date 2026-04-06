@@ -1,3 +1,4 @@
+import os
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db, close_db
@@ -117,6 +119,10 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health.router)
+
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+    if os.path.isdir(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     return app
 
