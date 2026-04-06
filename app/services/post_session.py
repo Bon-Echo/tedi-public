@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -78,21 +79,22 @@ async def run_post_session_pipeline(
     svc = ClaudeService()
 
     # -------------------------------------------------------------------------
-    # Step 1 — Generate all 4 artifacts in parallel
+    # Step 1 — Generate all 4 artifacts in parallel (with per-artifact timing)
     # -------------------------------------------------------------------------
-    tdd_task = asyncio.create_task(svc.generate_tdd(transcript, discovery_sections))
-    claude_md_task = asyncio.create_task(svc.generate_claude_md(transcript, discovery_sections))
-    skills_task = asyncio.create_task(svc.generate_skills(transcript, discovery_sections))
-    context_task = asyncio.create_task(
-        svc.generate_context(transcript, discovery_sections, company_name)
+    (tdd_result, tdd_ms), (claude_md_result, claude_md_ms), (skills_result, skills_ms), (context_result, context_ms) = await asyncio.gather(
+        _timed_task(svc.generate_tdd(transcript, discovery_sections)),
+        _timed_task(svc.generate_claude_md(transcript, discovery_sections)),
+        _timed_task(svc.generate_skills(transcript, discovery_sections)),
+        _timed_task(svc.generate_context(transcript, discovery_sections, company_name)),
     )
 
-    tdd_result, claude_md_result, skills_result, context_result = await asyncio.gather(
-        tdd_task,
-        claude_md_task,
-        skills_task,
-        context_task,
-        return_exceptions=True,
+    logger.info(
+        "post_session_timing",
+        session_id=session_id,
+        tdd_ms=tdd_ms,
+        claude_md_ms=claude_md_ms,
+        skills_ms=skills_ms,
+        context_ms=context_ms,
     )
 
     # -------------------------------------------------------------------------
@@ -268,6 +270,19 @@ async def run_post_session_pipeline(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+async def _timed_task(coro: Any) -> tuple[Any, int]:
+    """Run a coroutine and return (result_or_exception, elapsed_ms).
+
+    Exceptions are caught and returned as the result value so that timing
+    is always recorded even when generation fails.
+    """
+    t0 = time.perf_counter()
+    try:
+        return await coro, round((time.perf_counter() - t0) * 1000)
+    except Exception as exc:
+        return exc, round((time.perf_counter() - t0) * 1000)
 
 
 async def _upload_to_s3(key: str, data: bytes, content_type: str) -> None:
