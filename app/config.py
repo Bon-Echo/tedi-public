@@ -1,63 +1,56 @@
-"""Application configuration — all settings from environment variables."""
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = {"case_sensitive": True, "env_file": ".env", "extra": "ignore"}
 
-    # -------------------------------------------------------------------------
-    # Core
-    # -------------------------------------------------------------------------
-    ENVIRONMENT: str = "production"
-    SERVICE_NAME: str = "tedi-public"
-    APP_ENV: str = "production"
+    # Application
+    APP_NAME: str = "tedi-public"
+    APP_ENV: str = "development"
+    DEBUG: bool = False
+    LOG_LEVEL: str = "WARNING"
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
 
-    # -------------------------------------------------------------------------
-    # AWS
-    # -------------------------------------------------------------------------
-    AWS_REGION: str = "us-east-1"
-
-    # -------------------------------------------------------------------------
-    # Database — RDS PostgreSQL
-    # -------------------------------------------------------------------------
-    DATABASE_URL: str = "postgresql+asyncpg://tedi_public:changeme@localhost:5432/tedi_public"
-
-    # -------------------------------------------------------------------------
-    # S3
-    # -------------------------------------------------------------------------
-    S3_BUCKET_NAME: str = "tedi-public-artifacts"
-
-    # -------------------------------------------------------------------------
-    # AI services
-    # -------------------------------------------------------------------------
+    # Anthropic
     ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+    ANTHROPIC_GATE_MODEL: str = "claude-haiku-4-5-20251001"
+    CONVERSATION_HISTORY_WINDOW: int = 40
+
+    # ElevenLabs
     ELEVENLABS_API_KEY: str = ""
-    ELEVENLABS_VOICE_ID: str = ""
-    DEEPGRAM_API_KEY: str = ""
+    ELEVENLABS_VOICE_ID: str = "ZoiZ8fuDWInAcwPXaVeq"
+    ELEVENLABS_MODEL_ID: str = "eleven_flash_v2_5"
+    ELEVENLABS_API_BASE_URL: str = "https://api.elevenlabs.io/v1"
 
-    # -------------------------------------------------------------------------
-    # Email (SES)
-    # -------------------------------------------------------------------------
+    # AWS
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = "tedi-artifacts"
+
+    # SES
     SES_FROM_EMAIL: str = "tedi@bonecho.ai"
-    FOLLOWUP_FROM_EMAIL: str = "sifat@bonecho.ai"
+    SES_REGION: str = "us-east-1"
 
-    # -------------------------------------------------------------------------
-    # Slack notifications
-    # -------------------------------------------------------------------------
-    SLACK_WEBHOOK_URL: str = ""          # Incoming webhook for #board-room
-    SLACK_CHANNEL: str = "#board-room"
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://tedi:password@localhost:5432/tedi_public"
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 20
 
-    # -------------------------------------------------------------------------
     # Session management
-    # -------------------------------------------------------------------------
     DAILY_SESSION_CAP: int = 30
-    SESSION_TIMEOUT_MINUTES: int = 25
+    SESSION_TIMEOUT_SECONDS: int = 1500  # 25 minutes
+    SILENCE_TIMEOUT_SECONDS: float = 1.5
 
-    # -------------------------------------------------------------------------
-    # Domain
-    # -------------------------------------------------------------------------
-    SERVICE_URL: str = "https://tedi-public.bonecho.ai"
+    # Rate limiting
+    SIGNUP_RATE_LIMIT: str = "5/minute"
+
+    # CORS
+    CORS_ORIGINS: str = "https://bonecho.ai,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",")]
 
 
 settings = Settings()
