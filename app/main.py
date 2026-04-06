@@ -15,8 +15,9 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import settings
 from app.database import init_db, close_db
 from app.middleware.rate_limit import limiter
-from app.routers import health, signup, session
+from app.routers import health, signup, session, browser_ws
 from app.schemas import ErrorResponse
+from app.services.browser import BrowserService
 
 logger = structlog.get_logger(__name__)
 
@@ -57,6 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     await init_db()
+
+    app.state.browser_service = BrowserService()
 
     yield
 
@@ -128,6 +131,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(signup.router)
     app.include_router(session.router)
+    app.include_router(browser_ws.router)
 
     return app
 
