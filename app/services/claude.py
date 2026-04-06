@@ -92,6 +92,82 @@ Output the following sections (omit any section with no content):
 - Industry-specific or company-specific terms that appeared in the session
 - Format: **Term** — definition or context"""
 
+SKILLS_GENERATION_PROMPT = """You are an AI automation specialist at BonEcho. Given a discovery session transcript and structured discovery notes, extract concrete automation opportunities and produce a skills file in Agent Factory YAML format.
+
+Your output must be valid YAML only. Do NOT wrap it in markdown code fences. Output raw YAML only.
+
+Rules:
+- Only include skills that are grounded in the session transcript or discovery notes — no generic or hallucinated skills
+- Each skill must map to a specific pain point, workflow, or automation opportunity that was explicitly discussed or clearly implied
+- Use lowercase-hyphenated names (e.g. "dispatch-optimization", "invoice-reconciliation")
+- Priority is "high" if the problem was described as urgent or frequent, "medium" if notable, "low" if mentioned in passing
+- Category should be one of: operations, finance, hiring, fleet, communication, knowledge, scheduling, reporting, compliance, other
+- Inputs and outputs should be concrete data types or artifacts mentioned in the session
+- Integrations should name specific systems mentioned (e.g. "ServiceTitan", "QuickBooks") or describe the type if no system was named (e.g. "GPS tracking system")
+- Notes should capture the human context: who does it manually today, what the pain is, any caveats
+- If no clear automation skills can be extracted, output: "skills: []"
+- Do not include more than 10 skills — focus on the highest-value opportunities
+
+Output this exact YAML structure:
+
+skills:
+  - name: "kebab-case-skill-name"
+    description: "One sentence: what this skill does and the problem it solves"
+    category: "operations | finance | hiring | fleet | communication | knowledge | scheduling | reporting | compliance | other"
+    priority: "high | medium | low"
+    inputs:
+      - "specific input data or artifact"
+    outputs:
+      - "specific output data or artifact"
+    integrations:
+      - "system or service name"
+    notes: "Human context: who does this today, what the manual pain is, any caveats"""
+
+CONTEXT_GENERATION_PROMPT = """You are a business analyst at BonEcho. Given a discovery session transcript and structured discovery notes, produce a structured business context document.
+
+Rules:
+- Output valid markdown only. No JSON, no code fences wrapping the whole output.
+- Only include information explicitly mentioned in the transcript or discovery notes.
+- Do not hallucinate names, tools, roles, or facts not grounded in the source.
+- Mark items that are uncertain or lightly implied with "(unconfirmed)".
+- Omit any section or sub-item if no relevant information was captured — do not include placeholder text.
+- Use concise bullet points. Avoid prose paragraphs.
+
+Output the following sections (omit any section with no content):
+
+# Business Context: {company_name}
+
+## Background
+- Industry and type of business
+- Founding or ownership context if mentioned
+- Approximate headcount or team size
+- Service areas or geography
+
+## Ideal Customer Profile (ICP)
+- Who they serve (customer type, verticals)
+- Typical deal or contract type if mentioned
+- Volume or scale indicators
+
+## Pain Points
+- Specific operational challenges described
+- Technology or tooling gaps
+- Process bottlenecks and their business impact
+
+## Current Tools & Systems
+- Software platforms in active use
+- Manual processes that have no tooling yet
+- Known integrations between systems
+
+## Key People
+- Names and roles mentioned during the session
+- Decision-makers identified
+- Technical or operational contacts
+
+## Notes
+- Follow-up items or open questions
+- Caveats, uncertainties, or items to validate
+- Additional context that does not fit above sections"""
+
 
 class ClaudeServiceError(Exception):
     """Raised when Claude API calls fail after retries."""
@@ -223,6 +299,135 @@ class ClaudeService:
             f"CLAUDE.md generation failed after {_MAX_RETRIES} attempts: {last_error}"
         ) from last_error
 
+    async def generate_skills(
+        self,
+        transcript: list[dict[str, str]],
+        discovery_sections: dict[str, Any],
+    ) -> str:
+        """Generate a skills YAML file from a session transcript and discovery notes.
+
+        Args:
+            transcript: List of message dicts with 'role' and 'content' keys.
+            discovery_sections: Dict of discovery section name -> accumulated notes.
+
+        Returns:
+            Valid YAML string matching Agent Factory skills schema.
+
+        Raises:
+            ClaudeServiceError: If all retries are exhausted.
+        """
+        transcript_text = self._format_transcript(transcript)
+        discovery_text = self._format_discovery_sections(discovery_sections)
+
+        user_message = (
+            f"## Session Transcript\n\n{transcript_text}\n\n"
+            f"## Discovery Notes\n\n{discovery_text}\n\n"
+            "Generate the skills YAML file now."
+        )
+
+        last_error: Exception | None = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                logger.info("claude_skills_generation_attempt", attempt=attempt)
+                response = await self._client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=4096,
+                    system=SKILLS_GENERATION_PROMPT,
+                    messages=[{"role": "user", "content": user_message}],
+                )
+                content = response.content[0].text.strip()
+                content = re.sub(r"^```(?:yaml)?\s*", "", content, flags=re.MULTILINE)
+                content = re.sub(r"\s*```$", "", content, flags=re.MULTILINE)
+                content = content.strip()
+                self._validate_yaml(content)
+                logger.info("claude_skills_generation_success", attempt=attempt)
+                return content
+            except (anthropic.RateLimitError, anthropic.APIStatusError) as exc:
+                last_error = exc
+                if attempt < _MAX_RETRIES:
+                    wait = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+                    logger.warning(
+                        "claude_skills_generation_retry",
+                        attempt=attempt,
+                        wait=wait,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(wait)
+            except ValueError as exc:
+                last_error = exc
+                logger.warning(
+                    "claude_skills_yaml_invalid",
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                if attempt >= _MAX_RETRIES:
+                    break
+
+        raise ClaudeServiceError(
+            f"Skills generation failed after {_MAX_RETRIES} attempts: {last_error}"
+        ) from last_error
+
+    async def generate_context(
+        self,
+        transcript: list[dict[str, str]],
+        discovery_sections: dict[str, Any],
+        company_name: str = "",
+    ) -> str:
+        """Generate a business context markdown file from a session transcript.
+
+        Args:
+            transcript: List of message dicts with 'role' and 'content' keys.
+            discovery_sections: Dict of discovery section name -> accumulated notes.
+            company_name: Client company name to substitute in the document header.
+
+        Returns:
+            Valid markdown string for the context document.
+
+        Raises:
+            ClaudeServiceError: If all retries are exhausted.
+        """
+        transcript_text = self._format_transcript(transcript)
+        discovery_text = self._format_discovery_sections(discovery_sections)
+
+        prompt = CONTEXT_GENERATION_PROMPT.replace(
+            "{company_name}", company_name or "Unknown Company"
+        )
+
+        user_message = (
+            f"## Session Transcript\n\n{transcript_text}\n\n"
+            f"## Discovery Notes\n\n{discovery_text}\n\n"
+            "Generate the business context document now."
+        )
+
+        last_error: Exception | None = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                logger.info("claude_context_generation_attempt", attempt=attempt)
+                response = await self._client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=3000,
+                    system=prompt,
+                    messages=[{"role": "user", "content": user_message}],
+                )
+                content = response.content[0].text.strip()
+                logger.info("claude_context_generation_success", attempt=attempt)
+                return content
+            except (anthropic.RateLimitError, anthropic.APIStatusError) as exc:
+                last_error = exc
+                if attempt < _MAX_RETRIES:
+                    wait = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+                    logger.warning(
+                        "claude_context_generation_retry",
+                        attempt=attempt,
+                        wait=wait,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(wait)
+
+        raise ClaudeServiceError(
+            f"Context generation failed after {_MAX_RETRIES} attempts: {last_error}"
+        ) from last_error
+
     @staticmethod
     def _format_transcript(transcript: list[dict[str, str]]) -> str:
         lines = []
@@ -253,3 +458,21 @@ class ClaudeService:
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
         cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
         return json.loads(cleaned.strip())
+
+    @staticmethod
+    def _validate_yaml(content: str) -> None:
+        """Validate that content is parseable YAML with a top-level 'skills' key."""
+        try:
+            import yaml  # noqa: PLC0415
+        except ImportError:
+            # PyYAML not installed — skip structural validation
+            return
+        try:
+            parsed = yaml.safe_load(content)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid YAML: {exc}") from exc
+        if not isinstance(parsed, dict) or "skills" not in parsed:
+            raise ValueError(
+                "Skills YAML must have a top-level 'skills' key. "
+                f"Got: {list(parsed.keys()) if isinstance(parsed, dict) else type(parsed)}"
+            )
