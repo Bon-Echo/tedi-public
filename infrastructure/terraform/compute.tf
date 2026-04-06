@@ -50,16 +50,3 @@ resource "aws_instance" "main" {
 
   depends_on = [aws_db_instance.main]
 }
-
-# ---------------------------------------------------------------------------
-# Elastic IP — stable public IP so DNS survives instance stop/start
-# ---------------------------------------------------------------------------
-
-resource "aws_eip" "main" {
-  instance = aws_instance.main.id
-  domain   = "vpc"
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-eip"
-  })
-}
