@@ -1,0 +1,269 @@
+name: Tedi Public CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "infrastructure/terraform/**"
+      - "Dockerfile"
+      - "static/**"
+      - "requirements.txt"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "infrastructure/terraform/**"
+      - "Dockerfile"
+      - "requirements.txt"
+  workflow_dispatch:
+
+# Prevent concurrent runs — serialise deploys to avoid duplicate EC2/RDS provisioning
+concurrency:
+  group: tedi-public-cicd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  SERVICE_NAME: tedi-public
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Terraform — plan on PR, apply on main push
+  # ---------------------------------------------------------------------------
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+
+    env:
+      TF_VAR_anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      TF_VAR_elevenlabs_api_key: ${{ secrets.ELEVENLABS_API_KEY }}
+      TF_VAR_elevenlabs_voice_id: ${{ secrets.ELEVENLABS_VOICE_ID }}
+      TF_VAR_deepgram_api_key: ${{ secrets.DEEPGRAM_API_KEY }}
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `#### Terraform Plan 📋
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            *Triggered by @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: terraform apply -auto-approve tfplan
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Build and Deploy — only on main push
+  # ---------------------------------------------------------------------------
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    needs: terraform
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ECR Repository URL
+        id: ecr-url
+        run: |
+          ECR_URL=$(aws ecr describe-repositories \
+            --repository-names ${{ env.SERVICE_NAME }} \
+            --query 'repositories[0].repositoryUri' \
+            --output text)
+          echo "url=${ECR_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=sha-${GITHUB_SHA::8}
+          ECR_URL=${{ steps.ecr-url.outputs.url }}
+
+          docker build -t ${ECR_URL}:${IMAGE_TAG} -t ${ECR_URL}:latest .
+          docker push ${ECR_URL}:${IMAGE_TAG}
+          docker push ${ECR_URL}:latest
+
+      - name: Get EC2 Instance ID
+        id: ec2
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters \
+              "Name=tag:Name,Values=${{ env.SERVICE_NAME }}-production-instance" \
+              "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          if [ -z "${INSTANCE_ID}" ] || [ "${INSTANCE_ID}" = "None" ]; then
+            echo "No running EC2 instance found with Name tag '${{ env.SERVICE_NAME }}-production-instance'."
+            exit 1
+          fi
+
+          echo "instance_id=${INSTANCE_ID}" >> "$GITHUB_OUTPUT"
+          echo "Found instance: ${INSTANCE_ID}"
+
+      - name: Wait for SSM agent registration
+        run: |
+          INSTANCE_ID=${{ steps.ec2.outputs.instance_id }}
+          echo "Waiting for SSM agent on ${INSTANCE_ID}..."
+
+          for i in $(seq 1 30); do
+            COUNT=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query 'length(InstanceInformationList)' \
+              --output text 2>/dev/null || echo "0")
+
+            echo "Attempt ${i}/30: SSM registered: ${COUNT}"
+
+            if [ "${COUNT}" = "1" ]; then
+              echo "SSM agent ready."
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "Timed out waiting for SSM agent."
+          exit 1
+
+      - name: Deploy via SSM
+        id: ssm
+        run: |
+          INSTANCE_ID=${{ steps.ec2.outputs.instance_id }}
+          IMAGE_TAG=sha-${GITHUB_SHA::8}
+          ECR_URL=${{ steps.ecr-url.outputs.url }}
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              'for i in \$(seq 1 60); do systemctl is-active --quiet docker && break; echo Waiting for docker...; sleep 10; done',
+              'while [ ! -f /opt/${{ env.SERVICE_NAME }}/.env ]; do echo Waiting for .env file...; sleep 10; done',
+              'aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${ECR_URL}',
+              'docker pull ${ECR_URL}:${IMAGE_TAG}',
+              'docker stop ${{ env.SERVICE_NAME }} || true',
+              'docker rm ${{ env.SERVICE_NAME }} || true',
+              'docker run -d --name ${{ env.SERVICE_NAME }} --restart always --env-file /opt/${{ env.SERVICE_NAME }}/.env -p 127.0.0.1:8000:8000 ${ECR_URL}:${IMAGE_TAG}',
+              'docker image prune -f'
+            ]" \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "command_id=${COMMAND_ID}" >> "$GITHUB_OUTPUT"
+          echo "SSM command sent: ${COMMAND_ID}"
+
+      - name: Wait for SSM Deploy
+        run: |
+          INSTANCE_ID=${{ steps.ec2.outputs.instance_id }}
+          COMMAND_ID=${{ steps.ssm.outputs.command_id }}
+
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${INSTANCE_ID}" \
+              --query 'Status' \
+              --output text)
+
+            echo "Attempt ${i}/30: SSM status: ${STATUS}"
+
+            if [ "${STATUS}" = "Success" ]; then
+              echo "Deploy completed."
+              exit 0
+            elif [ "${STATUS}" = "Failed" ] || [ "${STATUS}" = "Cancelled" ] || [ "${STATUS}" = "TimedOut" ]; then
+              echo "Deploy ${STATUS}."
+              aws ssm get-command-invocation \
+                --command-id "${COMMAND_ID}" \
+                --instance-id "${INSTANCE_ID}" \
+                --query 'StandardErrorContent' \
+                --output text
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "Timed out waiting for deploy."
+          exit 1
+
+      - name: Health Check
+        run: |
+          SERVICE_URL="https://${{ env.SERVICE_NAME }}.bonecho.ai"
+
+          for i in $(seq 1 30); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health" || true)
+            echo "Attempt ${i}/30: Health check HTTP ${HTTP_STATUS}"
+
+            if [ "${HTTP_STATUS}" = "200" ]; then
+              echo "Service healthy."
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "Health check failed."
+          exit 1

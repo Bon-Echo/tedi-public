@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tedi — BonEcho</title>
+  <link rel="stylesheet" href="/static/room.css">
+</head>
+<body>
+  <!-- Session timer -->
+  <div id="session-timer" class="session-timer">00:00</div>
+
+  <!-- Main room UI -->
+  <div id="room-ui" class="room-ui">
+    <div class="container">
+      <div class="orb-wrapper">
+        <div class="orb-glow" id="orb-glow"></div>
+        <div class="orb listening" id="orb">
+          <svg class="teddy-svg" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- Ears -->
+            <circle cx="30" cy="28" r="18" fill="#c4956a"/>
+            <circle cx="30" cy="28" r="11" fill="#e0b088"/>
+            <circle cx="90" cy="28" r="18" fill="#c4956a"/>
+            <circle cx="90" cy="28" r="11" fill="#e0b088"/>
+            <!-- Head -->
+            <ellipse cx="60" cy="52" rx="36" ry="34" fill="#d4a574"/>
+            <!-- Body -->
+            <ellipse cx="60" cy="92" rx="30" ry="26" fill="#d4a574"/>
+            <!-- Belly patch -->
+            <ellipse cx="60" cy="94" rx="18" ry="16" fill="#e8c9a0"/>
+            <!-- Eyes -->
+            <circle cx="47" cy="46" r="4.5" fill="#3d2b1f"/>
+            <circle cx="73" cy="46" r="4.5" fill="#3d2b1f"/>
+            <circle cx="48.5" cy="44.5" r="1.5" fill="#fff"/>
+            <circle cx="74.5" cy="44.5" r="1.5" fill="#fff"/>
+            <!-- Nose -->
+            <ellipse cx="60" cy="56" rx="6" ry="4.5" fill="#3d2b1f"/>
+            <ellipse cx="60" cy="55" rx="3" ry="1.5" fill="#6b4c3b" opacity="0.5"/>
+            <!-- Mouth -->
+            <path d="M54 60 Q57 65 60 60 Q63 65 66 60" stroke="#3d2b1f" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            <!-- Arms -->
+            <ellipse cx="28" cy="85" rx="10" ry="16" fill="#c4956a" transform="rotate(20, 28, 85)"/>
+            <ellipse cx="92" cy="85" rx="10" ry="16" fill="#c4956a" transform="rotate(-20, 92, 85)"/>
+            <!-- Feet -->
+            <ellipse cx="44" cy="114" rx="12" ry="7" fill="#c4956a"/>
+            <ellipse cx="76" cy="114" rx="12" ry="7" fill="#c4956a"/>
+            <ellipse cx="44" cy="114" rx="7" ry="4" fill="#e0b088"/>
+            <ellipse cx="76" cy="114" rx="7" ry="4" fill="#e0b088"/>
+          </svg>
+        </div>
+      </div>
+      <div class="brand-name">Tedi</div>
+      <div class="status-text" id="status" aria-live="polite">Connecting...</div>
+    </div>
+  </div>
+
+  <!-- Microphone denied overlay -->
+  <div id="mic-denied" class="mic-denied hidden" role="alert">
+    <div class="mic-denied-content">
+      <div class="mic-denied-icon">🎤</div>
+      <h2>Microphone Access Required</h2>
+      <p>Tedi needs access to your microphone to have a conversation. Please allow microphone access in your browser and reload the page.</p>
+      <button onclick="location.reload()" class="btn-reload">Reload Page</button>
+    </div>
+  </div>
+
+  <!-- End screen -->
+  <div id="end-screen" class="end-screen hidden" role="main" aria-label="Session complete">
+    <div class="end-content">
+      <div class="end-logo">
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="end-teddy">
+          <circle cx="30" cy="28" r="18" fill="#c4956a"/>
+          <circle cx="30" cy="28" r="11" fill="#e0b088"/>
+          <circle cx="90" cy="28" r="18" fill="#c4956a"/>
+          <circle cx="90" cy="28" r="11" fill="#e0b088"/>
+          <ellipse cx="60" cy="52" rx="36" ry="34" fill="#d4a574"/>
+          <ellipse cx="60" cy="92" rx="30" ry="26" fill="#d4a574"/>
+          <ellipse cx="60" cy="94" rx="18" ry="16" fill="#e8c9a0"/>
+          <circle cx="47" cy="46" r="4.5" fill="#3d2b1f"/>
+          <circle cx="73" cy="46" r="4.5" fill="#3d2b1f"/>
+          <circle cx="48.5" cy="44.5" r="1.5" fill="#fff"/>
+          <circle cx="74.5" cy="44.5" r="1.5" fill="#fff"/>
+          <ellipse cx="60" cy="56" rx="6" ry="4.5" fill="#3d2b1f"/>
+          <ellipse cx="60" cy="55" rx="3" ry="1.5" fill="#6b4c3b" opacity="0.5"/>
+          <path d="M54 60 Q57 65 60 60 Q63 65 66 60" stroke="#3d2b1f" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          <ellipse cx="28" cy="85" rx="10" ry="16" fill="#c4956a" transform="rotate(20, 28, 85)"/>
+          <ellipse cx="92" cy="85" rx="10" ry="16" fill="#c4956a" transform="rotate(-20, 92, 85)"/>
+          <ellipse cx="44" cy="114" rx="12" ry="7" fill="#c4956a"/>
+          <ellipse cx="76" cy="114" rx="12" ry="7" fill="#c4956a"/>
+          <ellipse cx="44" cy="114" rx="7" ry="4" fill="#e0b088"/>
+          <ellipse cx="76" cy="114" rx="7" ry="4" fill="#e0b088"/>
+        </svg>
+      </div>
+      <h1 class="end-heading">Thanks for talking with Tedi</h1>
+      <p class="end-message">Check your email for your files</p>
+      <p class="end-brand">BonEcho</p>
+    </div>
+  </div>
+
+  <!-- Debug log (visible with ?debug=1) -->
+  <div id="debug-log" class="debug-log" aria-hidden="true"></div>
+
+  <script src="/static/room.js"></script>
+</body>
+</html>

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
-    # No gate model — Tedi always responds
+    ANTHROPIC_GATE_MODEL: str = "claude-haiku-4-5-20251001"
     CONVERSATION_HISTORY_WINDOW: int = 40
 
     # ElevenLabs
@@ -24,24 +24,38 @@ class Settings(BaseSettings):
     ELEVENLABS_MODEL_ID: str = "eleven_flash_v2_5"
     ELEVENLABS_API_BASE_URL: str = "https://api.elevenlabs.io/v1"
 
-    # AWS S3
-    S3_BUCKET_NAME: str = "tedi-public-artifacts"
+    # AWS
     AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = "tedi-artifacts"
 
     # SES
-    SES_FROM_EMAIL: str = "tedi@agents.bonecho.ai"
+    SES_FROM_EMAIL: str = "tedi@bonecho.ai"
+    SES_REGION: str = "us-east-1"
     OUTPUT_RECIPIENTS: str = "labeeb@bonecho.ai,deep@bonecho.ai"
 
-    # Session
-    SESSION_TIMEOUT_MINUTES: float = 25.0
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://tedi:password@localhost:5432/tedi_public"
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 20
+
+    # Session management
+    DAILY_SESSION_CAP: int = 30
+    SESSION_TIMEOUT_SECONDS: int = 1500  # 25 minutes
     SILENCE_TIMEOUT_SECONDS: float = 1.5
 
+    # Rate limiting
+    SIGNUP_RATE_LIMIT: str = "5/minute"
+
     # CORS
-    ALLOWED_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = "https://bonecho.ai,http://localhost:3000"
 
     @property
-    def allowed_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",")]
+
+    @property
+    def output_recipients_list(self) -> list[str]:
+        return [o.strip() for o in self.OUTPUT_RECIPIENTS.split(",")]
 
 
 settings = Settings()
