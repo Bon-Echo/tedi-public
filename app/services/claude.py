@@ -1,4 +1,4 @@
-"""Claude AI service for TDD generation from session transcripts."""
+"""Claude AI service for session output generation (TDD, CLAUDE.md, skills, context)."""
 
 import asyncio
 import json
@@ -53,13 +53,52 @@ Output this exact JSON schema:
   ]
 }"""
 
+CLAUDE_MD_GENERATION_PROMPT = """You are a technical writer at BonEcho. Given a discovery session transcript and structured discovery notes, produce a CLAUDE.md file for the client's project.
+
+CLAUDE.md is a context file that developers place in their project root so that Claude Code understands the company and project. It must be concise, accurate, and LLM-optimized — no filler, no padding.
+
+Rules:
+- Output valid markdown only. No JSON, no code fences wrapping the whole output.
+- Only include information explicitly mentioned in the transcript or discovery notes.
+- Do not hallucinate names, tools, workflows, or terminology not grounded in the source.
+- Omit any section entirely if no relevant information was captured for it — do not include empty sections or placeholder text like "N/A" or "Not discussed".
+- Use short, declarative bullet points. Avoid prose paragraphs.
+- Language should be clear and direct — suitable for an LLM reading it as context.
+
+Output the following sections (omit any section with no content):
+
+## Company Context
+- Company name and what they do (1-2 bullet points)
+- Approximate headcount or team size if mentioned
+- Verticals or industries served
+- Key stakeholders mentioned by name and role
+
+## Workflows
+- Core business workflows identified (e.g. job dispatch, hiring, equipment tracking)
+- Step-by-step only if the session went into that level of detail
+- Keep each workflow to 2-4 bullets maximum
+
+## Tech Stack
+- Software tools and platforms currently in use
+- Integrations mentioned (APIs, third-party services)
+- Known technical constraints or legacy systems
+
+## Agent Goals
+- Recommended AI agents and their primary objectives (one bullet per agent)
+- Priority: high / medium / low for each
+- Measurable success metric if mentioned
+
+## Key Terminology
+- Industry-specific or company-specific terms that appeared in the session
+- Format: **Term** — definition or context"""
+
 
 class ClaudeServiceError(Exception):
     """Raised when Claude API calls fail after retries."""
 
 
 class ClaudeService:
-    """Handles Claude API calls for TDD generation."""
+    """Handles Claude API calls for session output generation."""
 
     def __init__(self) -> None:
         self._client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -127,6 +166,61 @@ class ClaudeService:
 
         raise ClaudeServiceError(
             f"TDD generation failed after {_MAX_RETRIES} attempts: {last_error}"
+        ) from last_error
+
+    async def generate_claude_md(
+        self,
+        transcript: list[dict[str, str]],
+        discovery_sections: dict[str, Any],
+    ) -> str:
+        """Generate a CLAUDE.md file from a session transcript and discovery notes.
+
+        Args:
+            transcript: List of message dicts with 'role' and 'content' keys.
+            discovery_sections: Dict of discovery section name -> accumulated notes.
+
+        Returns:
+            Valid markdown string ready to be written as CLAUDE.md.
+
+        Raises:
+            ClaudeServiceError: If all retries are exhausted.
+        """
+        transcript_text = self._format_transcript(transcript)
+        discovery_text = self._format_discovery_sections(discovery_sections)
+
+        user_message = (
+            f"## Session Transcript\n\n{transcript_text}\n\n"
+            f"## Discovery Notes\n\n{discovery_text}\n\n"
+            "Generate the CLAUDE.md file now."
+        )
+
+        last_error: Exception | None = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                logger.info("claude_md_generation_attempt", attempt=attempt)
+                response = await self._client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=2048,
+                    system=CLAUDE_MD_GENERATION_PROMPT,
+                    messages=[{"role": "user", "content": user_message}],
+                )
+                content = response.content[0].text.strip()
+                logger.info("claude_md_generation_success", attempt=attempt)
+                return content
+            except (anthropic.RateLimitError, anthropic.APIStatusError) as exc:
+                last_error = exc
+                if attempt < _MAX_RETRIES:
+                    wait = _RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+                    logger.warning(
+                        "claude_md_generation_retry",
+                        attempt=attempt,
+                        wait=wait,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(wait)
+
+        raise ClaudeServiceError(
+            f"CLAUDE.md generation failed after {_MAX_RETRIES} attempts: {last_error}"
         ) from last_error
 
     @staticmethod
