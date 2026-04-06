@@ -1,0 +1,430 @@
+/* BonEcho brand variables */
+:root {
+  --navy:    #0B1A2E;
+  --cream:   #F5F0E8;
+  --burgundy:#7A1F32;
+  --gold:    #C9A96E;
+  --navy-mid:#112340;
+  --navy-light: #1a3050;
+  --cream-muted: rgba(245, 240, 232, 0.7);
+
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-body:    'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── Reset ───────────────────────────────────────────────── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── Base ────────────────────────────────────────────────── */
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: linear-gradient(160deg, var(--navy) 0%, var(--navy-mid) 55%, #1c1030 100%);
+  font-family: var(--font-body);
+  color: var(--cream);
+  position: relative;
+}
+
+/* Subtle animated background shimmer */
+body::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background:
+    radial-gradient(ellipse at 30% 50%, rgba(201, 169, 110, 0.05) 0%, transparent 55%),
+    radial-gradient(ellipse at 70% 50%, rgba(122, 31,  50, 0.04) 0%, transparent 55%);
+  animation: bgShift 14s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes bgShift {
+  0%   { transform: translate(0,    0)    rotate(0deg); }
+  100% { transform: translate(3%, -2%)   rotate(3deg); }
+}
+
+/* ── Utility ─────────────────────────────────────────────── */
+.hidden { display: none !important; }
+
+/* ── Session timer ───────────────────────────────────────── */
+.session-timer {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cream-muted);
+  letter-spacing: 0.05em;
+  z-index: 10;
+  user-select: none;
+}
+
+/* ── Room UI ─────────────────────────────────────────────── */
+.room-ui {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+.container {
+  text-align: center;
+  position: relative;
+}
+
+/* ── Orb ─────────────────────────────────────────────────── */
+.orb-wrapper {
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 28px;
+  position: relative;
+}
+
+.orb-glow {
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 169, 110, 0.12) 0%, transparent 70%);
+  transition: background 0.4s ease, opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.orb {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff8f0, #f5e6d3);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.35),
+    0 0 60px rgba(201, 169, 110, 0.08),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.08);
+  border: 3px solid rgba(201, 169, 110, 0.25);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.orb .teddy-svg {
+  width: 120px;
+  height: 120px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+  transition: transform 0.3s ease;
+}
+
+/* Listening state — subtle idle pulse */
+.orb.listening {
+  animation: idlePulse 4s ease-in-out infinite;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.3),
+    0 0 50px rgba(201, 169, 110, 0.06),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.06);
+}
+
+@keyframes idlePulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.02); }
+}
+
+/* Thinking state — warm amber glow, slow pulse */
+.orb.thinking {
+  animation: thinkingPulse 2s ease-in-out infinite;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.3),
+    0 0 70px rgba(255, 180, 60, 0.18),
+    0 0 110px rgba(255, 140, 30, 0.1),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.orb.thinking .teddy-svg {
+  animation: teddyThink 2s ease-in-out infinite;
+}
+
+@keyframes thinkingPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.03); }
+}
+
+@keyframes teddyThink {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-4px); }
+}
+
+/* Speaking state — active pulse, gold glow */
+.orb.speaking {
+  animation: speakingPulse 1.2s ease-in-out infinite;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.3),
+    0 0 80px rgba(201, 169, 110, 0.28),
+    0 0 120px rgba(201, 169, 110, 0.15),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.06);
+  border-color: rgba(201, 169, 110, 0.45);
+}
+
+.orb.speaking .teddy-svg {
+  animation: teddyBounce 1.2s ease-in-out infinite;
+}
+
+@keyframes speakingPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.06); }
+}
+
+@keyframes teddyBounce {
+  0%, 100% { transform: scale(1)    rotate(0deg);  }
+  25%       { transform: scale(1.02) rotate(-2deg); }
+  75%       { transform: scale(1.02) rotate(2deg);  }
+}
+
+/* Glow tints per state */
+.orb.thinking   ~ .orb-glow,
+.orb-glow.thinking  { background: radial-gradient(circle, rgba(255, 180, 60, 0.12) 0%, transparent 70%); }
+.orb.speaking   ~ .orb-glow,
+.orb-glow.speaking  { background: radial-gradient(circle, rgba(201, 169, 110, 0.18) 0%, transparent 70%); }
+
+/* ── Brand name ──────────────────────────────────────────── */
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--cream);
+  margin-bottom: 8px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Status text ─────────────────────────────────────────── */
+.status-text {
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--cream-muted);
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  min-height: 24px;
+}
+
+/* Animated thinking dots */
+.thinking-dots::after {
+  content: '';
+  display: inline-block;
+  animation: thinkingDots 1.4s steps(4, end) infinite;
+}
+
+@keyframes thinkingDots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+
+/* ── Microphone denied overlay ───────────────────────────── */
+.mic-denied {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 26, 46, 0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.mic-denied-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.mic-denied-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.mic-denied-content h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--cream);
+  margin-bottom: 12px;
+}
+
+.mic-denied-content p {
+  font-size: 15px;
+  color: var(--cream-muted);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.btn-reload {
+  background: var(--burgundy);
+  color: var(--cream);
+  border: none;
+  border-radius: 6px;
+  padding: 12px 28px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.btn-reload:hover  { background: #8f2438; }
+.btn-reload:active { transform: scale(0.97); }
+
+/* ── End screen ──────────────────────────────────────────── */
+.end-screen {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(160deg, var(--navy) 0%, var(--navy-mid) 55%, #1c1030 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  animation: fadeIn 0.6s ease;
+  padding: 24px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.end-content {
+  text-align: center;
+  max-width: 480px;
+}
+
+.end-logo {
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 24px;
+  opacity: 0.9;
+}
+
+.end-teddy {
+  width: 100%;
+  height: 100%;
+}
+
+.end-heading {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: 600;
+  color: var(--cream);
+  margin-bottom: 12px;
+  line-height: 1.2;
+}
+
+.end-message {
+  font-size: clamp(15px, 2.5vw, 18px);
+  color: var(--gold);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  margin-bottom: 32px;
+}
+
+.end-brand {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: rgba(245, 240, 232, 0.3);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+/* ── Debug log ───────────────────────────────────────────── */
+.debug-log {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: rgba(0, 0, 0, 0.92);
+  color: #0f0;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 8px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  z-index: 100;
+}
+
+body.debug .debug-log { display: block; }
+
+/* ── Responsive ──────────────────────────────────────────── */
+
+/* Tablet (768px) */
+@media (max-width: 768px) {
+  .orb-wrapper {
+    width: 170px;
+    height: 170px;
+    margin-bottom: 22px;
+  }
+
+  .orb .teddy-svg {
+    width: 100px;
+    height: 100px;
+  }
+
+  .brand-name {
+    font-size: 32px;
+  }
+
+  .status-text {
+    font-size: 15px;
+  }
+
+  .session-timer {
+    font-size: 14px;
+    top: 16px;
+    right: 16px;
+  }
+}
+
+/* Mobile (375px and below) */
+@media (max-width: 480px) {
+  .orb-wrapper {
+    width: 140px;
+    height: 140px;
+    margin-bottom: 20px;
+  }
+
+  .orb .teddy-svg {
+    width: 84px;
+    height: 84px;
+  }
+
+  .brand-name {
+    font-size: 28px;
+  }
+
+  .status-text {
+    font-size: 14px;
+  }
+
+  .session-timer {
+    font-size: 13px;
+    top: 14px;
+    right: 14px;
+  }
+
+  .end-logo {
+    width: 80px;
+    height: 80px;
+  }
+}
