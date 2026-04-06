@@ -47,3 +47,15 @@ class SessionService:
         db.add(session)
         await db.commit()
         logger.info("session_ended", session_id=str(session.id))
+
+    async def transition_to_timed_out(
+        self,
+        session: Session,
+        db: AsyncSession,
+    ) -> None:
+        """Transition an ACTIVE session to TIMED_OUT when session duration expires."""
+        session.status = "TIMED_OUT"
+        session.ended_at = datetime.now(timezone.utc)
+        db.add(session)
+        await db.commit()
+        logger.info("session_timed_out", session_id=str(session.id))

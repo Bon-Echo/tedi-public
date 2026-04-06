@@ -4,6 +4,7 @@ The browser client opens a WebSocket here to receive audio and send
 barge-in / playback-finished signals.
 """
 
+import asyncio
 import uuid
 
 import structlog
@@ -43,8 +44,11 @@ async def browser_websocket(
         {"type": "audio_chunk", "request_id": "...", "audio_base64": "...", "is_final": false}
         {"type": "response_complete", "request_id": "..."}
         {"type": "stop_playback"}
+        {"type": "session_ending", "seconds_remaining": 120}
+        {"type": "session_ended"}
     """
     browser_service: BrowserService = websocket.app.state.browser_service
+    orchestrator = websocket.app.state.orchestrator
     sid = str(session_id)
 
     async with async_session_factory() as db:
@@ -66,11 +70,15 @@ async def browser_websocket(
 
         await websocket.accept()
 
-        # Transition CREATED -> ACTIVE on first connect
+        # Transition CREATED -> ACTIVE on first connect and start session timeout
         if db_session.status == "CREATED":
             await _session_service.transition_to_active(db_session, db)
 
     runtime_state = RuntimeSessionState(session_id=session_id)
+
+    # Start the session timeout clock (BON-21)
+    orchestrator.start_session_timeout(sid, runtime_state, token)
+
     await browser_service.register(sid, websocket)
 
     try:
@@ -108,12 +116,10 @@ async def browser_websocket(
                     session_id=sid,
                     transcript_len=len(transcript_text),
                 )
-                async with runtime_state.lock:
-                    if transcript_text:
-                        runtime_state.transcript.append(
-                            {"role": "user", "text": transcript_text}
-                        )
-                    runtime_state.turn_state = TurnState.TURN_RECEIVED
+                if transcript_text.strip():
+                    asyncio.create_task(
+                        orchestrator.on_speech_final(sid, transcript_text, runtime_state)
+                    )
 
             else:
                 logger.debug(
@@ -127,13 +133,14 @@ async def browser_websocket(
     except Exception:
         logger.exception("browser_ws_error", session_id=sid)
     finally:
-        # Cancel any pending timeout task (wired up by orchestrator in BON-21)
+        # Cancel any pending timeout task
         if runtime_state.timeout_task is not None:
             runtime_state.timeout_task.cancel()
 
         await browser_service.unregister(sid)
 
-        # Transition session to ENDED
+        # Transition session to ENDED (only if still ACTIVE — TIMED_OUT sessions
+        # are already handled by the timeout task)
         async with async_session_factory() as end_db:
             end_session = await _session_service.get_session_by_token(token, end_db)
             if end_session is not None and end_session.status == "ACTIVE":

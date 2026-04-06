@@ -31,6 +31,7 @@ class RuntimeSessionState:
         self.active_request_id: str | None = None
         self.conversation_history: list[dict[str, str]] = []
         self.transcript: list[dict[str, Any]] = []
+        self.tdd_sections: dict[str, Any] = {}
         self.lock: asyncio.Lock = asyncio.Lock()
-        # Timeout task handle — set by the orchestrator (BON-21)
+        # Timeout task handle — set by the orchestrator when session activates
         self.timeout_task: asyncio.Task[None] | None = None

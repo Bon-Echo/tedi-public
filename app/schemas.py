@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, EmailStr
 
@@ -39,3 +40,18 @@ class SessionResponse(BaseModel):
     status: str
     startedAt: datetime | None = None
     timeoutAt: datetime | None = None
+
+
+# --- Claude / TDD ---
+
+class TDDUpdate(BaseModel):
+    section: str
+    content: str
+    action: str  # "append" or "replace"
+
+
+class ClaudeResponse(BaseModel):
+    spoken_response: str
+    tdd_updates: list[TDDUpdate] = []
+    internal_notes: str = ""
+    should_leave: bool = False

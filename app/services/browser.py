@@ -114,8 +114,19 @@ class BrowserService:
             )
             return False
 
+    async def close_connection(
+        self, session_id: str, code: int = 1000, reason: str = ""
+    ) -> None:
+        """Close the WebSocket connection for a session."""
+        ws = self._connections.get(session_id)
+        if ws is not None:
+            try:
+                await ws.close(code=code, reason=reason)
+            except Exception:
+                pass
+
     async def send_message(self, session_id: str, message: dict[str, Any]) -> bool:
-        """Send a JSON message to the browser page.
+        """Send a JSON message to the browser.
 
         Returns True if sent successfully, False if not connected.
         """
