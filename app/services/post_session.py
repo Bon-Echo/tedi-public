@@ -1,4 +1,4 @@
-"""Post-session pipeline — parallel 4-file generation, S3 upload, email delivery."""
+"""Post-session pipeline — parallel 2-file generation, S3 upload, email delivery."""
 
 from __future__ import annotations
 
@@ -30,8 +30,6 @@ class PostSessionResult:
     # Per-artifact results (None = not generated)
     tdd_s3_key: str | None = None
     claude_md_s3_key: str | None = None
-    skills_s3_key: str | None = None
-    context_s3_key: str | None = None
 
     email_sent: bool = False
     slack_sent: bool = False
@@ -48,14 +46,14 @@ async def run_post_session_pipeline(
 ) -> PostSessionResult:
     """Run the post-session pipeline for a completed discovery session.
 
-    Generates all 4 output artifacts in parallel, uploads to S3, delivers
+    Generates 2 output artifacts in parallel, uploads to S3, delivers
     via email, and sends a Slack notification. Partial failures are tolerated —
     whatever was generated is still delivered.
 
     Args:
         session_id: Unique session identifier (used for S3 key prefix and logs).
         transcript: Full conversation history as list of {role, content} dicts.
-        discovery_sections: Dict of the 5 discovery areas and their accumulated notes.
+        discovery_sections: Dict of the 3 discovery areas and their accumulated notes.
         company_name: Client company name used in filenames and email copy.
         user_email: Recipient email address for the output files.
 
@@ -78,20 +76,14 @@ async def run_post_session_pipeline(
     svc = ClaudeService()
 
     # -------------------------------------------------------------------------
-    # Step 1 — Generate all 4 artifacts in parallel
+    # Step 1 — Generate 2 artifacts in parallel
     # -------------------------------------------------------------------------
     tdd_task = asyncio.create_task(svc.generate_tdd(transcript, discovery_sections))
     claude_md_task = asyncio.create_task(svc.generate_claude_md(transcript, discovery_sections))
-    skills_task = asyncio.create_task(svc.generate_skills(transcript, discovery_sections))
-    context_task = asyncio.create_task(
-        svc.generate_context(transcript, discovery_sections, company_name)
-    )
 
-    tdd_result, claude_md_result, skills_result, context_result = await asyncio.gather(
+    tdd_result, claude_md_result = await asyncio.gather(
         tdd_task,
         claude_md_task,
-        skills_task,
-        context_task,
         return_exceptions=True,
     )
 
@@ -126,22 +118,6 @@ async def run_post_session_pipeline(
     else:
         claude_md_content = claude_md_result
 
-    if isinstance(skills_result, Exception):
-        err = f"Skills generation failed: {skills_result}"
-        result.errors.append(err)
-        logger.error("post_session_skills_failed", session_id=session_id, error=str(skills_result))
-        skills_content: str | None = None
-    else:
-        skills_content = skills_result
-
-    if isinstance(context_result, Exception):
-        err = f"Context generation failed: {context_result}"
-        result.errors.append(err)
-        logger.error("post_session_context_failed", session_id=session_id, error=str(context_result))
-        context_content: str | None = None
-    else:
-        context_content = context_result
-
     # -------------------------------------------------------------------------
     # Step 3 — Upload to S3 in parallel
     # -------------------------------------------------------------------------
@@ -163,22 +139,6 @@ async def run_post_session_pipeline(
     else:
         upload_tasks.append(asyncio.create_task(_noop()))
 
-    if skills_content is not None:
-        skills_key = f"sessions/{session_id}/{safe_name}_skills.yaml"
-        upload_tasks.append(
-            asyncio.create_task(_upload_to_s3(skills_key, skills_content.encode(), "text/yaml"))
-        )
-    else:
-        upload_tasks.append(asyncio.create_task(_noop()))
-
-    if context_content is not None:
-        context_key = f"sessions/{session_id}/{safe_name}_context.md"
-        upload_tasks.append(
-            asyncio.create_task(_upload_to_s3(context_key, context_content.encode(), "text/markdown"))
-        )
-    else:
-        upload_tasks.append(asyncio.create_task(_noop()))
-
     s3_results = await asyncio.gather(*upload_tasks, return_exceptions=True)
 
     # Record S3 keys on success
@@ -192,28 +152,15 @@ async def run_post_session_pipeline(
     elif isinstance(s3_results[1], Exception):
         result.errors.append(f"CLAUDE.md S3 upload failed: {s3_results[1]}")
 
-    if skills_content is not None and not isinstance(s3_results[2], Exception):
-        result.skills_s3_key = f"sessions/{session_id}/{safe_name}_skills.yaml"
-    elif isinstance(s3_results[2], Exception):
-        result.errors.append(f"Skills S3 upload failed: {s3_results[2]}")
-
-    if context_content is not None and not isinstance(s3_results[3], Exception):
-        result.context_s3_key = f"sessions/{session_id}/{safe_name}_context.md"
-    elif isinstance(s3_results[3], Exception):
-        result.errors.append(f"Context S3 upload failed: {s3_results[3]}")
-
     # -------------------------------------------------------------------------
     # Step 4 — Email delivery (send whatever we have; skip if nothing generated)
     # -------------------------------------------------------------------------
-    any_generated = any(
-        x is not None
-        for x in [tdd_docx_bytes, claude_md_content, skills_content, context_content]
-    )
+    any_generated = any(x is not None for x in [tdd_docx_bytes, claude_md_content])
 
     if any_generated:
         tdd_doc_name = tdd_filename or f"{safe_name}_TDD.docx"
         project_name = (
-            tdd_result.get("project_name") or company_name
+            tdd_result.get("company_name") or company_name
             if not isinstance(tdd_result, Exception)
             else company_name
         )
@@ -223,8 +170,6 @@ async def run_post_session_pipeline(
                 project_name=project_name,
                 tdd_docx_bytes=tdd_docx_bytes or _empty_docx(),
                 claude_md_content=claude_md_content or "(CLAUDE.md generation failed)",
-                skills_content=skills_content or "(Skills generation failed)",
-                context_content=context_content or "(Context generation failed)",
             )
             result.email_sent = True
             logger.info("post_session_email_sent", session_id=session_id, user_email=user_email)
@@ -240,8 +185,8 @@ async def run_post_session_pipeline(
     # -------------------------------------------------------------------------
     try:
         business_summary = (
-            tdd_result.get("project_overview", "")[:120]
-            if not isinstance(tdd_result, Exception) and tdd_result.get("project_overview")
+            tdd_result.get("business_overview", "")[:120]
+            if not isinstance(tdd_result, Exception) and tdd_result.get("business_overview")
             else company_name
         )
         await notify_session_complete(
