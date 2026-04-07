@@ -16,26 +16,29 @@ dnf install -y docker nginx python3-certbot-nginx cronie
 systemctl enable docker nginx crond
 systemctl start docker
 
-# Authenticate with ECR
-aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_repository_url}
-
-# Pull the latest image
-docker pull ${ecr_repository_url}:latest
-
-# Write environment file
+# Write environment file FIRST — before any docker operations so SSM deploy
+# does not hang waiting for it if the initial image pull fails.
 mkdir -p /opt/${service_name}
 
 cat > /opt/${service_name}/.env <<'ENVFILE'
 ${env_file_content}
 ENVFILE
 
-# Run the main application container
-docker run -d \
-  --name ${service_name} \
-  --restart always \
-  --env-file /opt/${service_name}/.env \
-  -p 127.0.0.1:8000:8000 \
-  ${ecr_repository_url}:latest
+# Authenticate with ECR
+aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_repository_url}
+
+# Pull and start the initial container. Use :latest if available; if not, the
+# CI/CD deploy (via SSM) will pull the correct SHA tag and start the service.
+if docker pull ${ecr_repository_url}:latest 2>/dev/null; then
+  docker run -d \
+    --name ${service_name} \
+    --restart always \
+    --env-file /opt/${service_name}/.env \
+    -p 127.0.0.1:8000:8000 \
+    ${ecr_repository_url}:latest
+else
+  echo "No :latest image available yet — CI/CD deploy will start the service."
+fi
 
 # ---------------------------------------------------------------------------
 # Follow-up email cron job — runs every 30 min, sends 24hr follow-up emails

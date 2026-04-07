@@ -8,9 +8,9 @@ output "instance_id" {
   value       = aws_instance.main.id
 }
 
-output "elastic_ip" {
-  description = "Elastic IP address of the EC2 instance"
-  value       = aws_eip.main.public_ip
+output "instance_ip" {
+  description = "Public IP address of the EC2 instance"
+  value       = aws_instance.main.public_ip
 }
 
 output "service_url" {
@@ -38,3 +38,4 @@ output "rds_identifier" {
   description = "RDS instance identifier"
   value       = aws_db_instance.main.identifier
 }
+

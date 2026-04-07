@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class DiscoveryArea(str, Enum):
@@ -108,3 +108,20 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     details: list[dict[str, Any]] | None = None
+
+
+# --- Signup ---
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr = Field(..., description="User email address")
+
+
+class SignupCreatedResponse(BaseModel):
+    sessionToken: str = Field(..., description="Session token UUID")
+    roomUrl: str = Field(..., description="URL to the browser room")
+
+
+class SignupWaitlistedResponse(BaseModel):
+    message: str = Field(..., description="Waitlist message")
+    position: int = Field(..., description="Approximate queue position")
