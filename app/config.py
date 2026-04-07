@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -49,6 +50,16 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: str = "https://bonecho.ai,http://localhost:3000"
+
+    @field_validator("ANTHROPIC_API_KEY")
+    @classmethod
+    def validate_anthropic_key(cls, v: str) -> str:
+        if not v or len(v) < 20:
+            raise ValueError(
+                "ANTHROPIC_API_KEY is missing or too short. "
+                "Set it in .env or environment variables."
+            )
+        return v
 
     @property
     def cors_origins_list(self) -> list[str]:
