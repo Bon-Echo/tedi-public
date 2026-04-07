@@ -25,10 +25,10 @@ try:
 except FileNotFoundError:
     logger.warning("discovery_prompt_file_not_found", path=str(_PROMPT_PATH))
     DISCOVERY_SYSTEM_PROMPT = """\
-You are Tedi, an active discovery interviewer for Bon Echo. Lead a structured 15-20 minute
-discovery session covering: business_overview, dispatch_capacity, hiring_seasonality,
-fleet_equipment, knowledge_transfer. Respond in JSON with spoken_response, discovery_updates,
-coverage, internal_notes, session_phase, elapsed_minutes.
+You are Tedi, an AI discovery guide for BonEcho. Lead a structured session to help the user \
+discover where AI agents can work in their business. Cover: business_overview, dispatch_capacity, \
+hiring_seasonality, fleet_equipment, knowledge_transfer. Respond in JSON with spoken_response, \
+discovery_updates, coverage, internal_notes, session_phase, elapsed_minutes.
 """
 
 TDD_GENERATION_PROMPT = """You are a technical documentation specialist at BonEcho. Given a session transcript and structured discovery notes, produce a complete Technical Design Document (TDD).
