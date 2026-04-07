@@ -10,11 +10,22 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
 from app.database import init_db, close_db
+from app.middleware.rate_limit import limiter
 from app.routers import health
+from app.routers import signup, session_router
+from app.routers import ws as ws_router
 from app.schemas import ErrorResponse
+from app.services.browser import BrowserService
+from app.services.claude import ClaudeService
+from app.services.elevenlabs import ElevenLabsService
+from app.session import SessionManager
+from app.ws_orchestrator import WebSocketOrchestrator
 
 logger = structlog.get_logger(__name__)
 
@@ -56,6 +67,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await init_db()
 
+    browser_service = BrowserService()
+    claude_service = ClaudeService()
+    elevenlabs_service = ElevenLabsService()
+    session_manager = SessionManager()
+
+    orchestrator = WebSocketOrchestrator(
+        browser_service=browser_service,
+        session_manager=session_manager,
+        claude_service=claude_service,
+        elevenlabs_service=elevenlabs_service,
+        post_session_service=None,
+    )
+
+    app.state.browser_service = browser_service
+    app.state.orchestrator = orchestrator
+    app.state.session_manager = session_manager
+
     yield
 
     await close_db()
@@ -73,6 +101,10 @@ def create_app() -> FastAPI:
         openapi_url=None if is_production else "/openapi.json",
         lifespan=lifespan,
     )
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -119,6 +151,9 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health.router)
+    app.include_router(signup.router)
+    app.include_router(session_router.router)
+    app.include_router(ws_router.router)
 
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     if os.path.isdir(static_dir):
