@@ -318,6 +318,7 @@ async function playBufferedAudio() {
     };
     activeSource.start(0);
     log(`Playing ${audioBuffer.duration.toFixed(2)}s`);
+    stopSpeechRecognition();  // pause STT to prevent echo feedback
     pollPlaybackLevel();
   } catch (e) {
     log(`Audio decode error: ${e.message}`);
@@ -346,6 +347,8 @@ function finishPlayback() {
   if (ws && ws.readyState === WebSocket.OPEN && currentRequestId) {
     ws.send(JSON.stringify({ type: 'playback_finished', request_id: currentRequestId }));
   }
+  // Resume STT now that playback is done (no more echo risk)
+  startSpeechRecognition();
 }
 
 function stopPlayback() {
