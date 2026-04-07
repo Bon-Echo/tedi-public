@@ -4,12 +4,33 @@ import asyncio
 
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import async_session_factory
+from app.models.session import Session as DBSession
+from app.models.user import User
 from app.session import SessionState, TurnState
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["websocket"])
+
+
+async def _lookup_user_email(call_id: str) -> str | None:
+    """Look up the user email for a session from the database."""
+    try:
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User.email)
+                .join(DBSession, DBSession.user_id == User.id)
+                .where(DBSession.id == call_id)
+            )
+            row = result.scalar_one_or_none()
+            return row
+    except Exception:
+        logger.exception("user_email_lookup_failed", call_id=call_id)
+        return None
 
 
 @router.websocket("/ws/bot/{call_id}")
@@ -38,6 +59,13 @@ async def websocket_endpoint(
     session_id = call_id
 
     await browser_service.register(session_id, websocket)
+
+    # Look up user email for post-session delivery
+    user_email = await _lookup_user_email(call_id)
+    if user_email:
+        orchestrator.set_user_email(session_id, user_email)
+        logger.info("ws_user_email_resolved", session_id=session_id, email=user_email)
+
     logger.info("ws_session_started", session_id=session_id)
 
     try:
@@ -91,4 +119,3 @@ async def websocket_endpoint(
         await browser_service.unregister(session_id)
         session_manager.remove_session(session_id)
         logger.info("ws_session_ended", session_id=session_id)
-

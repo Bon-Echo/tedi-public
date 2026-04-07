@@ -1,7 +1,8 @@
 /**
  * Tedi Browser Room — room.js
  *
- * WebSocket, audio playback, VAD, session timer, Web Speech API STT.
+ * WebSocket, audio playback, VAD, session timer, Web Speech API STT,
+ * Three.js orb integration, transcript panel, executive summary, controls.
  *
  * URL params:
  *   call_id    — required, session identifier
@@ -11,7 +12,8 @@
  * WebSocket protocol:
  *   Browser → Server: ready | barge_in | playback_finished | speech_final
  *   Server → Browser: thinking_start | response_start | audio_chunk |
- *                     response_complete | stop_playback | session_end
+ *                     response_complete | stop_playback | session_end |
+ *                     discovery_update
  */
 
 'use strict';
@@ -26,14 +28,17 @@ if (params.get('debug') === '1') {
 }
 
 // ── DOM refs ──────────────────────────────────────────────
-const orbEl      = document.getElementById('orb');
-const orbGlowEl  = document.getElementById('orb-glow');
-const statusEl   = document.getElementById('status');
-const timerEl    = document.getElementById('session-timer');
-const roomUiEl   = document.getElementById('room-ui');
-const endScreenEl= document.getElementById('end-screen');
-const micDeniedEl= document.getElementById('mic-denied');
-const logEl      = document.getElementById('debug-log');
+const statusEl       = document.getElementById('status');
+const timerEl        = document.getElementById('session-timer');
+const roomUiEl       = document.getElementById('room-ui');
+const endScreenEl    = document.getElementById('end-screen');
+const micDeniedEl    = document.getElementById('mic-denied');
+const logEl          = document.getElementById('debug-log');
+const controlBarEl   = document.getElementById('control-bar');
+const orbCanvas      = document.getElementById('orb-canvas');
+const transcriptEl   = document.getElementById('transcript-messages');
+const muteBtn        = document.getElementById('mute-btn');
+const endBtn         = document.getElementById('end-btn');
 
 // ── Logging ───────────────────────────────────────────────
 function log(msg) {
@@ -58,6 +63,8 @@ let vadAnalyser     = null;
 let vadInterval     = null;
 let sessionEnded    = false;
 let reconnectCount  = 0;
+let isMuted         = false;
+let playbackAnalyser = null;
 const MAX_RECONNECTS = 3;
 const RECONNECT_DELAY= 2000;
 
@@ -85,12 +92,56 @@ function stopTimer() {
   timerInterval = null;
 }
 
-// ── Orb / status helpers ──────────────────────────────────
+// ── Status helpers ────────────────────────────────────────
 function setStatus(msg, mode) {
   statusEl.textContent = msg;
   statusEl.classList.toggle('thinking-dots', mode === 'thinking');
-  orbEl.className = `orb ${mode || 'listening'}`;
-  orbGlowEl.className = `orb-glow ${mode || 'listening'}`;
+  if (window.TediOrb) TediOrb.setState(mode || 'listening');
+}
+
+// ── Transcript ────────────────────────────────────────────
+function addTranscriptMessage(sender, text) {
+  if (!text || !text.trim()) return;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'transcript-msg ' + sender;
+
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = sender === 'user' ? 'You' : 'Tedi';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.textContent = text;
+
+  wrapper.appendChild(label);
+  wrapper.appendChild(bubble);
+  transcriptEl.appendChild(wrapper);
+  transcriptEl.scrollTo({ top: transcriptEl.scrollHeight, behavior: 'smooth' });
+}
+
+// ── Executive Summary ─────────────────────────────────────
+const AREA_LABELS = {
+  business_overview:   'Business Overview',
+  dispatch_capacity:   'Dispatch & Capacity',
+  hiring_seasonality:  'Hiring & Seasonality',
+  fleet_equipment:     'Fleet & Equipment',
+  knowledge_transfer:  'Knowledge Transfer',
+};
+
+function updateSummaryPanel(sections, coverage) {
+  for (const [area, content] of Object.entries(sections)) {
+    const contentEl = document.querySelector(`[data-content="${area}"]`);
+    if (contentEl && content) {
+      contentEl.textContent = content;
+    }
+
+    const covValue = (coverage && coverage[area]) || 0;
+    const covEl = document.querySelector(`[data-coverage="${area}"]`);
+    if (covEl) covEl.textContent = covValue + '%';
+
+    const barEl = document.querySelector(`[data-bar="${area}"]`);
+    if (barEl) barEl.style.width = covValue + '%';
+  }
 }
 
 // ── End screen ────────────────────────────────────────────
@@ -100,12 +151,12 @@ function showEndScreen() {
   stopTimer();
   stopPlayback();
   stopSpeechRecognition();
+  if (window.TediOrb) TediOrb.dispose();
 
   log('Session ended — showing end screen');
 
-  // Fade out room UI, show end screen
   roomUiEl.classList.add('hidden');
-  timerEl.classList.add('hidden');
+  controlBarEl.classList.add('hidden');
   endScreenEl.classList.remove('hidden');
 }
 
@@ -149,7 +200,6 @@ function connectWebSocket() {
     if (sessionEnded) return;
 
     if (event.code === 1000) {
-      // Normal closure — treat as session end
       showEndScreen();
       return;
     }
@@ -179,9 +229,13 @@ function handleServerMessage(msg) {
 
     case 'response_start':
       log(`Response start: "${(msg.spoken_text || '').slice(0, 80)}"`);
+      stopPlayback();                    // stop any in-progress audio first
       currentRequestId = msg.request_id;
       mp3Chunks        = [];
       setStatus('Speaking...', 'speaking');
+      if (msg.spoken_text) {
+        addTranscriptMessage('tedi', msg.spoken_text);
+      }
       break;
 
     case 'audio_chunk':
@@ -199,6 +253,11 @@ function handleServerMessage(msg) {
     case 'stop_playback':
       log('Server requested stop');
       stopPlayback();
+      break;
+
+    case 'discovery_update':
+      log('Discovery update received');
+      updateSummaryPanel(msg.sections || {}, msg.coverage || {});
       break;
 
     case 'session_end':
@@ -220,6 +279,11 @@ async function initAudio() {
     await audioContext.resume();
     log('AudioContext resumed');
   }
+
+  // Create persistent playback analyser
+  playbackAnalyser = audioContext.createAnalyser();
+  playbackAnalyser.fftSize = 256;
+  playbackAnalyser.connect(audioContext.destination);
 }
 
 async function playBufferedAudio() {
@@ -247,21 +311,37 @@ async function playBufferedAudio() {
 
     activeSource          = audioContext.createBufferSource();
     activeSource.buffer   = audioBuffer;
-    activeSource.connect(audioContext.destination);
+    activeSource.connect(playbackAnalyser);  // route through analyser
     activeSource.onended  = () => {
       activeSource = null;
       finishPlayback();
     };
     activeSource.start(0);
     log(`Playing ${audioBuffer.duration.toFixed(2)}s`);
+    pollPlaybackLevel();
   } catch (e) {
     log(`Audio decode error: ${e.message}`);
     finishPlayback();
   }
 }
 
+function pollPlaybackLevel() {
+  if (!isPlaying || !playbackAnalyser) {
+    if (window.TediOrb) TediOrb.setPlaybackLevel(0);
+    return;
+  }
+  const buf = new Float32Array(playbackAnalyser.fftSize);
+  playbackAnalyser.getFloatTimeDomainData(buf);
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  const rms = Math.sqrt(sum / buf.length);
+  if (window.TediOrb) TediOrb.setPlaybackLevel(Math.min(rms * 8, 1.0));
+  requestAnimationFrame(pollPlaybackLevel);
+}
+
 function finishPlayback() {
   isPlaying = false;
+  if (window.TediOrb) TediOrb.setPlaybackLevel(0);
   setStatus('Listening...', 'listening');
   if (ws && ws.readyState === WebSocket.OPEN && currentRequestId) {
     ws.send(JSON.stringify({ type: 'playback_finished', request_id: currentRequestId }));
@@ -279,6 +359,7 @@ function stopPlayback() {
   mp3Chunks        = [];
   isPlaying        = false;
   currentRequestId = null;
+  if (window.TediOrb) TediOrb.setPlaybackLevel(0);
   if (!sessionEnded) setStatus('Listening...', 'listening');
   log('Playback stopped');
 }
@@ -304,6 +385,9 @@ async function initVAD() {
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
       const rms = Math.sqrt(sum / dataArray.length);
+
+      // Feed mic level to orb
+      if (window.TediOrb) TediOrb.setAudioLevel(Math.min(rms * 10, 1.0));
 
       if (rms > VAD_THRESHOLD) {
         const now = Date.now();
@@ -353,6 +437,7 @@ function initSpeechRecognition() {
         const transcript = result[0].transcript.trim();
         if (transcript && ws && ws.readyState === WebSocket.OPEN) {
           log(`STT final: "${transcript.slice(0, 80)}"`);
+          addTranscriptMessage('user', transcript);
           ws.send(JSON.stringify({ type: 'speech_final', transcript }));
         }
       }
@@ -360,7 +445,6 @@ function initSpeechRecognition() {
   };
 
   recognition.onerror = (event) => {
-    // 'no-speech' and 'aborted' are non-fatal — restart handles them
     if (event.error !== 'no-speech' && event.error !== 'aborted') {
       log(`Speech recognition error: ${event.error}`);
     }
@@ -368,8 +452,7 @@ function initSpeechRecognition() {
 
   recognition.onend = () => {
     recognitionActive = false;
-    // Auto-restart unless session has ended
-    if (!sessionEnded) {
+    if (!sessionEnded && !isMuted) {
       startSpeechRecognition();
     }
   };
@@ -378,7 +461,7 @@ function initSpeechRecognition() {
 }
 
 function startSpeechRecognition() {
-  if (!recognition || recognitionActive || sessionEnded) return;
+  if (!recognition || recognitionActive || sessionEnded || isMuted) return;
   try {
     recognition.start();
     recognitionActive = true;
@@ -397,6 +480,42 @@ function stopSpeechRecognition() {
   } catch (_) { /* already stopped */ }
 }
 
+// ── Controls ─────────────────────────────────────────────
+function initControls() {
+  // Mute button
+  muteBtn.addEventListener('click', () => {
+    isMuted = !isMuted;
+
+    // Disable mic audio tracks
+    if (vadStream) {
+      vadStream.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
+    }
+
+    // Stop/start speech recognition
+    if (isMuted) {
+      stopSpeechRecognition();
+    } else {
+      startSpeechRecognition();
+    }
+
+    // Update UI
+    muteBtn.classList.toggle('muted', isMuted);
+    muteBtn.querySelector('.mic-icon').classList.toggle('hidden', isMuted);
+    muteBtn.querySelector('.muted-icon').classList.toggle('hidden', !isMuted);
+    log(isMuted ? 'Mic muted' : 'Mic unmuted');
+  });
+
+  // End call button
+  endBtn.addEventListener('click', () => {
+    if (sessionEnded) return;
+    log('User ended call');
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.close(1000, 'user_ended');
+    }
+    showEndScreen();
+  });
+}
+
 // ── Bootstrap ─────────────────────────────────────────────
 async function main() {
   if (!callId) {
@@ -410,7 +529,20 @@ async function main() {
 
   setStatus('Connecting...', 'listening');
 
-  // Connect WebSocket first — don't let audio/VAD failures block it
+  // Init Three.js orb
+  if (window.TediOrb && orbCanvas) {
+    try {
+      TediOrb.init(orbCanvas);
+      log('TediOrb initialized');
+    } catch (e) {
+      log(`TediOrb init error: ${e.message}`);
+    }
+  }
+
+  // Init controls
+  initControls();
+
+  // Connect WebSocket
   connectWebSocket();
 
   try {

@@ -6,6 +6,7 @@ from app.orchestrator import Orchestrator
 from app.services.browser import BrowserService
 from app.services.claude import ClaudeService
 from app.services.elevenlabs import ElevenLabsService
+from app.services.post_session import run_post_session_pipeline
 from app.session import SessionManager, SessionState
 
 logger = structlog.get_logger(__name__)
@@ -30,6 +31,12 @@ class WebSocketOrchestrator(Orchestrator):
         )
         self._browser = browser_service
         self._request_ids: dict[str, str] = {}
+        # user email per session for post-session email delivery
+        self._user_emails: dict[str, str] = {}
+
+    def set_user_email(self, session_id: str, email: str) -> None:
+        """Store user email for post-session delivery."""
+        self._user_emails[session_id] = email
 
     async def on_speech_final(self, session_id: str, text: str) -> None:
         """Send thinking_start before delegating to the base turn pipeline."""
@@ -54,6 +61,34 @@ class WebSocketOrchestrator(Orchestrator):
         if not self._browser.is_cancelled(session_id):
             await self._browser.send_response_complete(session_id, request_id)
 
+        # Send discovery updates to the browser after each turn
+        await self._browser.send_discovery_update(
+            session_id, session.discovery_sections, session.coverage
+        )
+
     async def _end_session(self, session_id: str, session: SessionState) -> None:
         await self._browser.send_session_end(session_id)
+
+        # Fire post-session pipeline (email TDD to client)
+        user_email = self._user_emails.pop(session_id, "")
+        if user_email:
+            import asyncio
+
+            asyncio.create_task(
+                run_post_session_pipeline(
+                    session_id=session_id,
+                    transcript=session.transcript,
+                    discovery_sections=session.discovery_sections,
+                    company_name=session.company_name or "Unknown",
+                    user_email=user_email,
+                )
+            )
+            logger.info(
+                "post_session_pipeline_fired",
+                session_id=session_id,
+                user_email=user_email,
+            )
+        else:
+            logger.warning("post_session_no_email", session_id=session_id)
+
         await super()._end_session(session_id, session)

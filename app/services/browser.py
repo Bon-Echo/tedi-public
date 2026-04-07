@@ -191,6 +191,19 @@ class BrowserService:
         """Tell the browser to immediately stop playing any audio."""
         return await self.send_message(session_id, {"type": "stop_playback"})
 
+    async def send_discovery_update(
+        self,
+        session_id: str,
+        sections: dict[str, str],
+        coverage: dict[str, int],
+    ) -> bool:
+        """Send discovery section updates to the browser for the executive summary panel."""
+        return await self.send_message(session_id, {
+            "type": "discovery_update",
+            "sections": sections,
+            "coverage": coverage,
+        })
+
     async def send_session_end(self, session_id: str) -> None:
         """Signal session over, then close the WebSocket connection."""
         await self.send_message(session_id, {"type": "session_end"})
