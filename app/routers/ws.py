@@ -3,7 +3,7 @@
 import asyncio
 
 import structlog
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.session import SessionState, TurnState
 
@@ -16,16 +16,15 @@ router = APIRouter(tags=["websocket"])
 async def websocket_endpoint(
     websocket: WebSocket,
     call_id: str,
-    request: Request,
 ) -> None:
     """WebSocket endpoint that room.js connects to.
 
     call_id is the DB session UUID returned by POST /api/v1/signup in roomUrl.
     It is used as the in-memory session key so orchestrator lookups resolve correctly.
     """
-    orchestrator = request.app.state.orchestrator
-    browser_service = request.app.state.browser_service
-    session_manager = request.app.state.session_manager
+    orchestrator = websocket.app.state.orchestrator
+    browser_service = websocket.app.state.browser_service
+    session_manager = websocket.app.state.session_manager
 
     await websocket.accept()
 
@@ -92,3 +91,4 @@ async def websocket_endpoint(
         await browser_service.unregister(session_id)
         session_manager.remove_session(session_id)
         logger.info("ws_session_ended", session_id=session_id)
+
