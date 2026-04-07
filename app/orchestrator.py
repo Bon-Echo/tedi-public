@@ -112,6 +112,8 @@ class Orchestrator:
             _apply_discovery_updates(session, response.discovery_updates)
             _apply_coverage(session, response.coverage)
 
+            await self._on_discovery_updated(session_id, session)
+
             if not response.spoken_response.strip():
                 logger.info("turn_silent", session_id=session_id)
                 async with session.lock:
@@ -191,6 +193,9 @@ class Orchestrator:
         Concrete integrations override this to check their own cancellation flag.
         """
         return False
+
+    async def _on_discovery_updated(self, session_id: str, session: SessionState) -> None:
+        """Hook called after discovery sections are updated. Override to push to clients."""
 
     async def _deliver_audio_chunk(self, session_id: str, chunk: bytes) -> None:
         """Deliver a single audio chunk to the playback channel.

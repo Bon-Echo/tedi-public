@@ -46,6 +46,12 @@ class WebSocketOrchestrator(Orchestrator):
     def _is_cancelled(self, session_id: str) -> bool:
         return self._browser.is_cancelled(session_id)
 
+    async def _on_discovery_updated(self, session_id: str, session: SessionState) -> None:
+        """Push discovery updates to browser for the executive summary panel."""
+        await self._browser.send_discovery_update(
+            session_id, session.discovery_sections, session.coverage
+        )
+
     async def _deliver_audio_chunk(self, session_id: str, chunk: bytes) -> None:
         request_id = self._request_ids.get(session_id, "")
         await self._browser.send_audio_chunk(session_id, request_id, chunk)
@@ -60,11 +66,6 @@ class WebSocketOrchestrator(Orchestrator):
         await super()._synthesize_and_play(session_id, session, text)
         if not self._browser.is_cancelled(session_id):
             await self._browser.send_response_complete(session_id, request_id)
-
-        # Send discovery updates to the browser after each turn
-        await self._browser.send_discovery_update(
-            session_id, session.discovery_sections, session.coverage
-        )
 
     async def _end_session(self, session_id: str, session: SessionState) -> None:
         await self._browser.send_session_end(session_id)
