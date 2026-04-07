@@ -1,7 +1,8 @@
 """Notification services: Slack board-room alerts and SES email delivery."""
 
 import asyncio
-import io
+import os
+import re
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -12,9 +13,9 @@ import structlog
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import settings
+from app.models.artifacts import SessionArtifacts
 
 logger = structlog.get_logger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Slack notifications
@@ -67,83 +68,187 @@ async def notify_session_complete(
 
 
 # ---------------------------------------------------------------------------
-# Email delivery — 4 output files
+# Email delivery — HTML + plain-text, dual-send
 # ---------------------------------------------------------------------------
 
 
 async def send_session_output_email(
     user_email: str,
     project_name: str,
-    tdd_docx_bytes: bytes,
-    claude_md_content: str,
-    skills_content: str,
-    context_content: str,
+    artifacts: SessionArtifacts,
 ) -> None:
-    """Send 4 output files to the user within 5 minutes of session end.
+    """Send discovery doc and CLAUDE.md to user, and a copy to BonEcho internal.
 
-    Files:
-        - TDD as DOCX
-        - CLAUDE.md as .md attachment
-        - Skills file as .md attachment
-        - Context file as .md attachment
+    Builds an HTML email with plain-text fallback. Attaches only the discovery
+    doc and CLAUDE.md. Includes a CTA booking link if BONECHO_BOOKING_URL is
+    configured. Sends a separate internal copy to BONECHO_INTERNAL_EMAIL with
+    an [Internal] subject prefix if that setting is configured.
 
     Args:
         user_email: Recipient email address.
-        project_name: Project name for subject line and filename.
-        tdd_docx_bytes: TDD document as DOCX bytes.
-        claude_md_content: CLAUDE.md file content.
-        skills_content: Skills file content.
-        context_content: Context file content.
+        project_name: Project name for subject line and email copy.
+        artifacts: SessionArtifacts with discovery doc and CLAUDE.md content.
     """
-    safe_name = project_name.replace(" ", "_")
+    subject = f"Your Tedi session output — {project_name}"
 
-    msg = MIMEMultipart()
-    msg["Subject"] = f"Your Tedi session output — {project_name}"
-    msg["From"] = settings.SES_FROM_EMAIL
-    msg["To"] = user_email
-
-    body = (
-        f"Hi,\n\n"
-        f"Here are the outputs from your Tedi discovery session for {project_name}.\n\n"
-        f"Attached:\n"
-        f"  1. Technical Design Document (TDD) — {safe_name}-TDD.docx\n"
-        f"  2. CLAUDE.md — ready to drop into Claude Code\n"
-        f"  3. Skills file — agent skills extracted from your session\n"
-        f"  4. Context file — business background and key details\n\n"
-        f"If you have questions, just reply to this email.\n\n"
-        f"— Tedi, BonEcho"
+    html_body = _render_email_html(
+        project_name=project_name,
+        discovery_doc_filename=artifacts.discovery_doc_filename,
+        claude_md_filename=artifacts.claude_md_filename,
+        booking_url=settings.BONECHO_BOOKING_URL,
     )
-    msg.attach(MIMEText(body, "plain"))
+    plain_body = _render_email_plain(
+        project_name=project_name,
+        discovery_doc_filename=artifacts.discovery_doc_filename,
+        claude_md_filename=artifacts.claude_md_filename,
+        booking_url=settings.BONECHO_BOOKING_URL,
+    )
 
-    # Attach TDD DOCX
-    tdd_attachment = MIMEApplication(tdd_docx_bytes)
-    tdd_attachment.add_header("Content-Disposition", "attachment", filename=f"{safe_name}-TDD.docx")
-    msg.attach(tdd_attachment)
+    # --- User email ---
+    user_msg = _build_message(
+        subject=subject,
+        from_addr=settings.SES_FROM_EMAIL,
+        to_addr=user_email,
+        html_body=html_body,
+        plain_body=plain_body,
+        artifacts=artifacts,
+    )
+    await _send_raw_email(settings.SES_FROM_EMAIL, [user_email], user_msg)
+    logger.info("session_output_email_sent", recipient=user_email, project_name=project_name)
 
-    # Attach CLAUDE.md
-    _attach_text(msg, claude_md_content.encode(), "CLAUDE.md")
+    # --- Internal email (separate send, [Internal] prefix) ---
+    if settings.BONECHO_INTERNAL_EMAIL:
+        internal_msg = _build_message(
+            subject=f"[Internal] {subject}",
+            from_addr=settings.SES_FROM_EMAIL,
+            to_addr=settings.BONECHO_INTERNAL_EMAIL,
+            html_body=html_body,
+            plain_body=plain_body,
+            artifacts=artifacts,
+        )
+        await _send_raw_email(
+            settings.SES_FROM_EMAIL,
+            [settings.BONECHO_INTERNAL_EMAIL],
+            internal_msg,
+        )
+        logger.info(
+            "session_output_internal_email_sent",
+            recipient=settings.BONECHO_INTERNAL_EMAIL,
+            project_name=project_name,
+        )
 
-    # Attach skills file
-    _attach_text(msg, skills_content.encode(), f"{safe_name}-skills.md")
 
-    # Attach context file
-    _attach_text(msg, context_content.encode(), f"{safe_name}-context.md")
+def _build_message(
+    subject: str,
+    from_addr: str,
+    to_addr: str,
+    html_body: str,
+    plain_body: str,
+    artifacts: SessionArtifacts,
+) -> MIMEMultipart:
+    """Build a MIME multipart/mixed message with alternative text/HTML and attachments."""
+    outer = MIMEMultipart("mixed")
+    outer["Subject"] = subject
+    outer["From"] = from_addr
+    outer["To"] = to_addr
 
-    # Send to user + internal team
-    recipients = [user_email]
-    for r in settings.OUTPUT_RECIPIENTS.split(","):
-        r = r.strip()
-        if r and r not in recipients:
-            recipients.append(r)
+    # Text alternatives
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(plain_body, "plain", "utf-8"))
+    alt.attach(MIMEText(html_body, "html", "utf-8"))
+    outer.attach(alt)
 
-    await _send_raw_email(settings.SES_FROM_EMAIL, recipients, msg)
-    logger.info("session_output_email_sent", recipients=recipients, project_name=project_name)
+    # Discovery doc attachment
+    doc_part = MIMEApplication(artifacts.discovery_doc)
+    doc_part.add_header(
+        "Content-Disposition", "attachment", filename=artifacts.discovery_doc_filename
+    )
+    doc_part.add_header("Content-Type", artifacts.discovery_doc_mime)
+    outer.attach(doc_part)
+
+    # CLAUDE.md attachment
+    claude_part = MIMEApplication(artifacts.claude_md.encode("utf-8"))
+    claude_part.add_header(
+        "Content-Disposition", "attachment", filename=artifacts.claude_md_filename
+    )
+    outer.attach(claude_part)
+
+    return outer
 
 
-def _attach_text(msg: MIMEMultipart, content: bytes, filename: str) -> None:
-    part = MIMEApplication(content)
-    part.add_header("Content-Disposition", "attachment", filename=filename)
-    msg.attach(part)
+def _render_email_html(
+    project_name: str,
+    discovery_doc_filename: str,
+    claude_md_filename: str,
+    booking_url: str,
+) -> str:
+    """Render the HTML email template with simple string substitution."""
+    template_path = os.path.join(
+        os.path.dirname(__file__), "..", "templates", "session_email.html"
+    )
+    with open(template_path, encoding="utf-8") as f:
+        html = f.read()
+
+    # Replace template variables
+    html = html.replace("{{ project_name }}", _escape_html(project_name))
+    html = html.replace("{{ discovery_doc_filename }}", _escape_html(discovery_doc_filename))
+    html = html.replace("{{ claude_md_filename }}", _escape_html(claude_md_filename))
+
+    if booking_url:
+        html = html.replace("{{ booking_url }}", _escape_html(booking_url))
+        # Remove Jinja-style block tags
+        html = re.sub(r"\{%\s*if booking_url\s*%\}", "", html)
+        html = re.sub(r"\{%\s*endif\s*%\}", "", html)
+    else:
+        # Remove entire CTA block
+        html = re.sub(
+            r"\{%\s*if booking_url\s*%\}.*?\{%\s*endif\s*%\}",
+            "",
+            html,
+            flags=re.DOTALL,
+        )
+
+    return html
+
+
+def _render_email_plain(
+    project_name: str,
+    discovery_doc_filename: str,
+    claude_md_filename: str,
+    booking_url: str,
+) -> str:
+    """Build plain-text fallback body."""
+    lines = [
+        "Hi,",
+        "",
+        f"Here are the outputs from your Tedi discovery session for {project_name}.",
+        "",
+        "Attached files:",
+        f"  - {discovery_doc_filename} (Technical Design Document)",
+        f"  - {claude_md_filename} (ready to drop into Claude Code)",
+        "",
+    ]
+    if booking_url:
+        lines += [
+            "Book your next session:",
+            f"  {booking_url}",
+            "",
+        ]
+    lines += [
+        "If you have any questions, reply to this email.",
+        "",
+        "— Tedi, BonEcho",
+    ]
+    return "\n".join(lines)
+
+
+def _escape_html(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 async def _send_raw_email(
