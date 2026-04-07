@@ -129,8 +129,15 @@ async def send_session_output_email(
     # Attach context file
     _attach_text(msg, context_content.encode(), f"{safe_name}-context.md")
 
-    await _send_raw_email(settings.SES_FROM_EMAIL, [user_email], msg)
-    logger.info("session_output_email_sent", user_email=user_email, project_name=project_name)
+    # Send to user + internal team
+    recipients = [user_email]
+    for r in settings.OUTPUT_RECIPIENTS.split(","):
+        r = r.strip()
+        if r and r not in recipients:
+            recipients.append(r)
+
+    await _send_raw_email(settings.SES_FROM_EMAIL, recipients, msg)
+    logger.info("session_output_email_sent", recipients=recipients, project_name=project_name)
 
 
 def _attach_text(msg: MIMEMultipart, content: bytes, filename: str) -> None:

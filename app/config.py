@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # SES
     SES_FROM_EMAIL: str = "tedi@bonecho.ai"
     SES_REGION: str = "us-east-1"
-    OUTPUT_RECIPIENTS: str = "labeeb@bonecho.ai,deep@bonecho.ai"
+    OUTPUT_RECIPIENTS: str = "labeeb@bonecho.ai,deep@bonecho.ai,sifat@bonecho.ai"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://tedi:password@localhost:5432/tedi_public"
