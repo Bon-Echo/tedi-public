@@ -280,6 +280,6 @@ def _apply_coverage(session: SessionState, coverage: object) -> None:
             session.coverage[area] = max(session.coverage[area], value)
 
 
-def _is_session_timeout(session: SessionState, max_minutes: float = 25.0) -> bool:
+def _is_session_timeout(session: SessionState, max_minutes: float = 12.0) -> bool:
     """Return True if the session has exceeded the hard timeout."""
     return session.elapsed_minutes() >= max_minutes
