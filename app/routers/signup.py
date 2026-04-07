@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_session
 from app.middleware.rate_limit import limiter, signup_rate_limit
 from app.schemas import SignupCreatedResponse, SignupRequest, SignupWaitlistedResponse
@@ -33,7 +34,8 @@ async def signup(
             ).model_dump(),
         )
 
-    room_url = f"/static/room.html?call_id={session.id}"
+    base = settings.PUBLIC_BASE_URL.rstrip("/")
+    room_url = f"{base}/static/room.html?call_id={session.id}"
 
     return JSONResponse(
         status_code=201,
@@ -42,4 +44,3 @@ async def signup(
             roomUrl=room_url,
         ).model_dump(),
     )
-
