@@ -6,11 +6,9 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class DiscoveryArea(str, Enum):
-    BUSINESS_OVERVIEW = "business_overview"
-    DISPATCH_CAPACITY = "dispatch_capacity"
-    HIRING_SEASONALITY = "hiring_seasonality"
-    FLEET_EQUIPMENT = "fleet_equipment"
-    KNOWLEDGE_TRANSFER = "knowledge_transfer"
+    BUSINESS_CONTEXT = "business_context"
+    PAIN_POINTS = "pain_points"
+    AGENT_OPPORTUNITIES = "agent_opportunities"
 
 
 class SessionPhase(str, Enum):
@@ -29,28 +27,22 @@ class DiscoveryUpdate(BaseModel):
 
 
 class Coverage(BaseModel):
-    business_overview: int = Field(default=0, ge=0, le=100)
-    dispatch_capacity: int = Field(default=0, ge=0, le=100)
-    hiring_seasonality: int = Field(default=0, ge=0, le=100)
-    fleet_equipment: int = Field(default=0, ge=0, le=100)
-    knowledge_transfer: int = Field(default=0, ge=0, le=100)
+    business_context: int = Field(default=0, ge=0, le=100)
+    pain_points: int = Field(default=0, ge=0, le=100)
+    agent_opportunities: int = Field(default=0, ge=0, le=100)
 
     def to_dict(self) -> dict[str, int]:
         return {
-            "business_overview": self.business_overview,
-            "dispatch_capacity": self.dispatch_capacity,
-            "hiring_seasonality": self.hiring_seasonality,
-            "fleet_equipment": self.fleet_equipment,
-            "knowledge_transfer": self.knowledge_transfer,
+            "business_context": self.business_context,
+            "pain_points": self.pain_points,
+            "agent_opportunities": self.agent_opportunities,
         }
 
     def average(self) -> float:
         values = [
-            self.business_overview,
-            self.dispatch_capacity,
-            self.hiring_seasonality,
-            self.fleet_equipment,
-            self.knowledge_transfer,
+            self.business_context,
+            self.pain_points,
+            self.agent_opportunities,
         ]
         return sum(values) / len(values)
 
