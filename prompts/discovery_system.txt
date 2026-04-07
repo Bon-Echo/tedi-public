@@ -70,15 +70,30 @@ You MUST respond with a JSON object with exactly these fields:
   "elapsed_minutes": 0
 }
 
-Rules:
+CRITICAL FORMAT RULES:
 1. spoken_response must be natural speech — no markdown, no lists, no formatting
 2. Keep spoken_response SHORT — this is a real-time voice conversation. 1-3 sentences max.
-3. Update coverage accurately — only increase when real information is captured
-4. discovery_updates: capture key facts, not verbatim quotes. Use append for new info, replace only when correcting prior info
-5. session_phase must reflect actual elapsed_minutes: opening (0-2), discovery (2-15), wrapping_up (15-18), closing (18+)
-6. elapsed_minutes is injected by the system — use it to set session_phase and pacing
-7. Never fabricate information. Only capture what was explicitly said.
-8. internal_notes is private — never spoken aloud
+3. discovery_updates MUST be a JSON ARRAY of objects, each with "area", "content" (string), and "action". Do NOT use nested dicts.
+4. coverage values MUST be integers 0-100, NOT strings like "partial" or "pending"
+5. session_phase MUST be exactly one of: "opening", "discovery", "wrapping_up", "closing" — no other values
+6. Update coverage accurately — only increase when real information is captured
+7. session_phase must reflect actual elapsed_minutes: opening (0-2), discovery (2-15), wrapping_up (15-18), closing (18+)
+8. elapsed_minutes is injected by the system — use it to set session_phase and pacing
+9. Never fabricate information. Only capture what was explicitly said.
+10. internal_notes is private — never spoken aloud
+
+EXAMPLE (correct format):
+{
+  "spoken_response": "Thanks for sharing that. So you're running about 15 trucks and handling dispatch manually right now. How do you typically assign which driver gets which job?",
+  "discovery_updates": [
+    {"area": "business_overview", "content": "Trucking company, 15 trucks, serves Ontario region", "action": "append"},
+    {"area": "dispatch_capacity", "content": "Dispatch handled manually by owner", "action": "append"}
+  ],
+  "coverage": {"business_overview": 25, "dispatch_capacity": 10, "hiring_seasonality": 0, "fleet_equipment": 5, "knowledge_transfer": 0},
+  "internal_notes": "Need to explore dispatch tools and hiring patterns next",
+  "session_phase": "discovery",
+  "elapsed_minutes": 3.5
+}
 
 ---
 

@@ -516,33 +516,114 @@ class ClaudeService:
         ) from last_error
 
     def _parse_response(self, raw_text: str) -> DiscoveryResponse:
-        """Parse Claude's raw text into a DiscoveryResponse."""
+        """Parse Claude's raw text into a DiscoveryResponse.
+
+        Handles multiple non-conforming formats Claude may produce:
+        - discovery_updates as dict-of-dicts instead of list
+        - coverage as strings instead of integers
+        - invalid session_phase values
+        """
         cleaned = self._extract_json_string(raw_text)
 
         try:
             data = json.loads(cleaned)
-            if "discovery_updates" in data and isinstance(data["discovery_updates"], list):
-                data["discovery_updates"] = [
-                    DiscoveryUpdate(**u) if isinstance(u, dict) else u
-                    for u in data["discovery_updates"]
-                ]
-            if "coverage" in data and isinstance(data["coverage"], dict):
-                data["coverage"] = Coverage(**data["coverage"])
-            if "session_phase" in data:
-                data["session_phase"] = SessionPhase(data["session_phase"])
-            return DiscoveryResponse(**data)
-
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning(
-                "claude_response_parse_fallback",
-                error=str(exc),
-                raw_text=raw_text[:500],
-            )
+        except json.JSONDecodeError:
+            logger.warning("claude_response_json_failed", raw_text=raw_text[:300])
             spoken = self._extract_spoken_response(raw_text)
             return DiscoveryResponse(
                 spoken_response=spoken,
                 discovery_updates=[],
-                internal_notes="[Parse error — raw response could not be fully parsed]",
+                internal_notes="[Parse error — JSON decode failed]",
+            )
+
+        # ── Normalize discovery_updates ────────────────────────────
+        raw_updates = data.get("discovery_updates", [])
+        updates: list[DiscoveryUpdate] = []
+
+        if isinstance(raw_updates, dict):
+            # Claude returned { "business_overview": { ... }, ... } instead of a list
+            for area, content_val in raw_updates.items():
+                if area not in ("business_overview", "dispatch_capacity",
+                                "hiring_seasonality", "fleet_equipment",
+                                "knowledge_transfer"):
+                    continue
+                if isinstance(content_val, dict):
+                    # Flatten dict values into a text block
+                    lines = [f"{k}: {v}" for k, v in content_val.items() if v]
+                    text = "\n".join(lines)
+                elif isinstance(content_val, str):
+                    text = content_val
+                else:
+                    continue
+                if text.strip():
+                    updates.append(DiscoveryUpdate(area=area, content=text, action="append"))
+        elif isinstance(raw_updates, list):
+            for u in raw_updates:
+                if isinstance(u, dict):
+                    try:
+                        updates.append(DiscoveryUpdate(**u))
+                    except Exception:
+                        # Try to salvage: might have area+content but wrong format
+                        area = u.get("area", "")
+                        content = u.get("content", "")
+                        if area and content:
+                            updates.append(DiscoveryUpdate(
+                                area=area, content=str(content), action=u.get("action", "append")
+                            ))
+
+        data["discovery_updates"] = updates
+
+        # ── Normalize coverage ─────────────────────────────────────
+        raw_cov = data.get("coverage", {})
+        if isinstance(raw_cov, dict):
+            clean_cov = {}
+            for k, v in raw_cov.items():
+                if isinstance(v, int):
+                    clean_cov[k] = max(0, min(100, v))
+                elif isinstance(v, (float, str)):
+                    # Try parsing; if string like "partial", map to a default
+                    try:
+                        clean_cov[k] = max(0, min(100, int(float(str(v)))))
+                    except (ValueError, TypeError):
+                        pass  # skip non-numeric values, keep existing coverage
+            try:
+                data["coverage"] = Coverage(**clean_cov)
+            except Exception:
+                data["coverage"] = Coverage()
+        else:
+            data["coverage"] = Coverage()
+
+        # ── Normalize session_phase ────────────────────────────────
+        raw_phase = data.get("session_phase", "opening")
+        try:
+            data["session_phase"] = SessionPhase(raw_phase)
+        except ValueError:
+            # Map common invalid values
+            phase_str = str(raw_phase).lower()
+            if "clos" in phase_str or "end" in phase_str or "conclu" in phase_str:
+                data["session_phase"] = SessionPhase.CLOSING
+            elif "wrap" in phase_str:
+                data["session_phase"] = SessionPhase.WRAPPING_UP
+            elif "discover" in phase_str or "accel" in phase_str:
+                data["session_phase"] = SessionPhase.DISCOVERY
+            else:
+                data["session_phase"] = SessionPhase.OPENING
+
+        try:
+            return DiscoveryResponse(**data)
+        except Exception as exc:
+            logger.warning(
+                "claude_response_construct_fallback",
+                error=str(exc),
+                raw_text=raw_text[:300],
+            )
+            spoken = data.get("spoken_response", "") or self._extract_spoken_response(raw_text)
+            return DiscoveryResponse(
+                spoken_response=spoken,
+                discovery_updates=updates,
+                coverage=data.get("coverage", Coverage()),
+                internal_notes=data.get("internal_notes"),
+                session_phase=data.get("session_phase", SessionPhase.OPENING),
             )
 
     @staticmethod
