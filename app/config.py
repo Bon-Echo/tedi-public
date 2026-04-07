@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "WARNING"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+    PUBLIC_BASE_URL: str = "https://tedi-public.bonecho.ai"
 
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
