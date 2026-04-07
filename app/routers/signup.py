@@ -10,10 +10,11 @@ from app.services.signup_service import SignupService
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["signup"])
+router = APIRouter(prefix="/api", tags=["signup"])
 
 
 @router.post("/signup")
+@router.post("/v1/signup")
 @limiter.limit(signup_rate_limit)
 async def signup(
     request: Request,
@@ -41,3 +42,4 @@ async def signup(
             roomUrl=room_url,
         ).model_dump(),
     )
+
