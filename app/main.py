@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
+import anthropic
 import structlog
 import uvicorn
 from fastapi import FastAPI, Request, Response
@@ -83,6 +84,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.browser_service = browser_service
     app.state.orchestrator = orchestrator
     app.state.session_manager = session_manager
+
+    # Validate Anthropic API key at startup to fail fast on misconfiguration
+    try:
+        await claude_service._client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        logger.info("claude_api_key_valid")
+    except anthropic.AuthenticationError:
+        logger.critical(
+            "claude_api_key_invalid",
+            hint="Check ANTHROPIC_API_KEY in .env or GitHub Secrets",
+        )
+        raise SystemExit("FATAL: Invalid ANTHROPIC_API_KEY — cannot start")
 
     yield
 
