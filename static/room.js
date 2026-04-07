@@ -1,7 +1,7 @@
 /**
  * Tedi Browser Room — room.js
  *
- * WebSocket, audio playback, VAD, session timer.
+ * WebSocket, audio playback, VAD, session timer, Web Speech API STT.
  *
  * URL params:
  *   call_id    — required, session identifier
@@ -9,7 +9,7 @@
  *   debug      — set to "1" to show debug log panel
  *
  * WebSocket protocol:
- *   Browser → Server: ready | barge_in | playback_finished
+ *   Browser → Server: ready | barge_in | playback_finished | speech_final
  *   Server → Browser: thinking_start | response_start | audio_chunk |
  *                     response_complete | stop_playback | session_end
  */
@@ -99,6 +99,7 @@ function showEndScreen() {
   sessionEnded = true;
   stopTimer();
   stopPlayback();
+  stopSpeechRecognition();
 
   log('Session ended — showing end screen');
 
@@ -318,12 +319,82 @@ async function initVAD() {
     }, VAD_POLL_MS);
 
     log('VAD initialized');
+
+    // Initialize speech recognition after mic access is granted
+    initSpeechRecognition();
   } catch (e) {
     log(`VAD/mic error: ${e.message}`);
     if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
       micDeniedEl.classList.remove('hidden');
     }
   }
+}
+
+// ── Speech Recognition (Web Speech API) ──────────────────
+let recognition     = null;
+let recognitionActive = false;
+
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    log('Web Speech API not supported in this browser — speech_final messages will not be sent');
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous     = true;
+  recognition.interimResults = false;
+  recognition.lang           = 'en-US';
+
+  recognition.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (result.isFinal) {
+        const transcript = result[0].transcript.trim();
+        if (transcript && ws && ws.readyState === WebSocket.OPEN) {
+          log(`STT final: "${transcript.slice(0, 80)}"`);
+          ws.send(JSON.stringify({ type: 'speech_final', transcript }));
+        }
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    // 'no-speech' and 'aborted' are non-fatal — restart handles them
+    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      log(`Speech recognition error: ${event.error}`);
+    }
+  };
+
+  recognition.onend = () => {
+    recognitionActive = false;
+    // Auto-restart unless session has ended
+    if (!sessionEnded) {
+      startSpeechRecognition();
+    }
+  };
+
+  startSpeechRecognition();
+}
+
+function startSpeechRecognition() {
+  if (!recognition || recognitionActive || sessionEnded) return;
+  try {
+    recognition.start();
+    recognitionActive = true;
+    log('Speech recognition started');
+  } catch (e) {
+    log(`Speech recognition start error: ${e.message}`);
+  }
+}
+
+function stopSpeechRecognition() {
+  if (!recognition) return;
+  try {
+    recognition.stop();
+    recognitionActive = false;
+    log('Speech recognition stopped');
+  } catch (_) { /* already stopped */ }
 }
 
 // ── Bootstrap ─────────────────────────────────────────────
