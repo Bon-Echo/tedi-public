@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
     ANTHROPIC_GATE_MODEL: str = "claude-haiku-4-5-20251001"
-    CONVERSATION_HISTORY_WINDOW: int = 40
+    CONVERSATION_HISTORY_WINDOW: int = 30
 
     # ElevenLabs
     ELEVENLABS_API_KEY: str = ""
@@ -42,8 +42,11 @@ class Settings(BaseSettings):
 
     # Session management
     DAILY_SESSION_CAP: int = 30
-    SESSION_TIMEOUT_SECONDS: int = 1500  # 25 minutes
+    SESSION_TIMEOUT_SECONDS: int = 720  # 12 minutes hard cap
     SILENCE_TIMEOUT_SECONDS: float = 1.5
+
+    # Booking
+    BOOKING_URL: str = "https://bonecho.ai/book"
 
     # Rate limiting
     SIGNUP_RATE_LIMIT: str = "5/minute"
