@@ -1,5 +1,8 @@
 """WebSocketOrchestrator — bridges Orchestrator to BrowserService for browser sessions."""
 
+import asyncio
+import copy
+
 import structlog
 
 from app.orchestrator import Orchestrator
@@ -68,19 +71,26 @@ class WebSocketOrchestrator(Orchestrator):
             await self._browser.send_response_complete(session_id, request_id)
 
     async def _end_session(self, session_id: str, session: SessionState) -> None:
+        # Snapshot session data BEFORE closing — ws.py will remove the session
+        # from memory on disconnect, so we need copies for the async pipeline.
+        transcript_copy = list(session.transcript)
+        discovery_copy = dict(session.discovery_sections)
+        company_name = session.company_name or "Unknown"
+        user_email = self._user_emails.pop(session_id, "")
+
+        # Wait briefly for the last audio playback to finish before closing
+        await self._browser.wait_for_playback(session_id, timeout=10.0)
+
         await self._browser.send_session_end(session_id)
 
-        # Fire post-session pipeline (email TDD to client)
-        user_email = self._user_emails.pop(session_id, "")
+        # Fire post-session pipeline with the snapshots
         if user_email:
-            import asyncio
-
             asyncio.create_task(
                 run_post_session_pipeline(
                     session_id=session_id,
-                    transcript=session.transcript,
-                    discovery_sections=session.discovery_sections,
-                    company_name=session.company_name or "Unknown",
+                    transcript=transcript_copy,
+                    discovery_sections=discovery_copy,
+                    company_name=company_name,
                     user_email=user_email,
                 )
             )

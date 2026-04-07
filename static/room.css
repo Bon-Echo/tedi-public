@@ -393,6 +393,45 @@ body::before {
   margin-bottom: 32px;
 }
 
+.end-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.end-btn {
+  display: inline-block;
+  padding: 14px 32px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.1s ease;
+  cursor: pointer;
+}
+
+.end-btn:active { transform: scale(0.97); }
+
+.end-btn-primary {
+  background: var(--burgundy);
+  color: var(--cream);
+}
+
+.end-btn-primary:hover { background: #8f2438; }
+
+.end-btn-secondary {
+  background: rgba(245, 240, 232, 0.08);
+  color: var(--cream);
+  border: 1px solid rgba(245, 240, 232, 0.15);
+}
+
+.end-btn-secondary:hover {
+  background: rgba(245, 240, 232, 0.14);
+}
+
 .end-brand {
   font-family: var(--font-display);
   font-size: 14px;
