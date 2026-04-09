@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import re
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -11,6 +10,7 @@ import boto3
 import httpx
 import structlog
 from botocore.exceptions import BotoCoreError, ClientError
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 from app.config import settings
 from app.models.artifacts import SessionArtifacts
@@ -182,33 +182,37 @@ def _render_email_html(
     claude_md_filename: str,
     booking_url: str,
 ) -> str:
-    """Render the HTML email template with simple string substitution."""
-    template_path = os.path.join(
-        os.path.dirname(__file__), "..", "templates", "session_email.html"
+    """Render the HTML email template using Jinja2.
+
+    Raises:
+        RuntimeError: If the template file is not found at the expected path.
+    """
+    template_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "templates")
     )
-    with open(template_path, encoding="utf-8") as f:
-        html = f.read()
-
-    # Replace template variables
-    html = html.replace("{{ project_name }}", _escape_html(project_name))
-    html = html.replace("{{ discovery_doc_filename }}", _escape_html(discovery_doc_filename))
-    html = html.replace("{{ claude_md_filename }}", _escape_html(claude_md_filename))
-
-    if booking_url:
-        html = html.replace("{{ booking_url }}", _escape_html(booking_url))
-        # Remove Jinja-style block tags
-        html = re.sub(r"\{%\s*if booking_url\s*%\}", "", html)
-        html = re.sub(r"\{%\s*endif\s*%\}", "", html)
-    else:
-        # Remove entire CTA block
-        html = re.sub(
-            r"\{%\s*if booking_url\s*%\}.*?\{%\s*endif\s*%\}",
-            "",
-            html,
-            flags=re.DOTALL,
+    try:
+        env = Environment(
+            loader=FileSystemLoader(template_dir),
+            autoescape=True,
+        )
+        template = env.get_template("session_email.html")
+    except TemplateNotFound:
+        logger.error(
+            "email_template_not_found",
+            template="session_email.html",
+            template_dir=template_dir,
+        )
+        raise RuntimeError(
+            f"Email template 'session_email.html' not found in {template_dir!r}. "
+            "Ensure the templates directory is included in the deployment package."
         )
 
-    return html
+    return template.render(
+        project_name=project_name,
+        discovery_doc_filename=discovery_doc_filename,
+        claude_md_filename=claude_md_filename,
+        booking_url=booking_url,
+    )
 
 
 def _render_email_plain(
@@ -240,15 +244,6 @@ def _render_email_plain(
         "— Tedi, BonEcho",
     ]
     return "\n".join(lines)
-
-
-def _escape_html(text: str) -> str:
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
 
 
 async def _send_raw_email(
