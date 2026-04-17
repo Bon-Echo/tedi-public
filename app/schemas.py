@@ -117,3 +117,19 @@ class SignupCreatedResponse(BaseModel):
 class SignupWaitlistedResponse(BaseModel):
     message: str = Field(..., description="Waitlist message")
     position: int = Field(..., description="Approximate queue position")
+
+
+# --- Admin dashboard ---
+
+
+class ManualFollowupRequest(BaseModel):
+    body: str = Field(..., min_length=1, description="Plain-text email body")
+    subject: str | None = Field(
+        default=None, description="Optional subject; server fills a default if omitted"
+    )
+
+
+class ManualFollowupResponse(BaseModel):
+    ok: bool
+    sentAt: datetime
+    auditId: str

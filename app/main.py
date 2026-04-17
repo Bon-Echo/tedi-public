@@ -19,7 +19,7 @@ from app.config import settings
 from app.database import init_db, close_db
 from app.middleware.rate_limit import limiter
 from app.routers import admin as admin_router
-from app.routers import health
+from app.routers import admin_api, auth, health
 from app.routers import signup, session_router
 from app.routers import ws as ws_router
 from app.schemas import ErrorResponse
@@ -123,13 +123,38 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
+    # Public Tedi origins (signup, room, ws). Admin/auth surface is protected
+    # by the per-route middleware below, which restricts cookied requests to
+    # the admin UI origin.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
+        allow_origins=settings.cors_origins_list + settings.admin_cors_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def admin_origin_guard(request: Request, call_next: object) -> Response:
+        """Block cross-origin requests to /api/admin and /auth from non-admin
+        origins.
+
+        CORS already prevents browsers from reading responses, but we also
+        reject the request server-side so the public Tedi origin cannot drive
+        admin actions even if a cookie is present.
+        """
+        path = request.url.path
+        if path.startswith("/api/admin") or path.startswith("/auth"):
+            origin = request.headers.get("origin")
+            if origin and origin not in settings.admin_cors_origins_list:
+                return JSONResponse(
+                    status_code=403,
+                    content=ErrorResponse(
+                        error="forbidden_origin",
+                        message="origin not permitted for admin surface",
+                    ).model_dump(),
+                )
+        return await call_next(request)  # type: ignore[misc]
 
     @app.middleware("http")
     async def request_logging_middleware(
@@ -172,6 +197,8 @@ def create_app() -> FastAPI:
     app.include_router(session_router.router)
     app.include_router(ws_router.router)
     app.include_router(admin_router.router)
+    app.include_router(auth.router)
+    app.include_router(admin_api.router)
 
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     if os.path.isdir(static_dir):

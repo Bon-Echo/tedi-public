@@ -1,5 +1,9 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+# Sentinel default for the admin session secret. Local/dev keeps working with
+# this value, but `Settings` raises at boot if APP_ENV=production still has it.
+_ADMIN_SESSION_SECRET_DEV_DEFAULT = "dev-only-change-me-in-production-32+chars"
 
 
 class Settings(BaseSettings):
@@ -34,6 +38,11 @@ class Settings(BaseSettings):
     SES_FROM_EMAIL: str = "tedi@bonecho.ai"
     SES_REGION: str = "us-east-1"
     OUTPUT_RECIPIENTS: str = "labeeb@bonecho.ai,deep@bonecho.ai,sifat@bonecho.ai"
+    FOLLOWUP_FROM_EMAIL: str = "sifat@bonecho.ai"
+
+    # Slack
+    SLACK_WEBHOOK_URL: str = ""
+    SLACK_CHANNEL: str = "#board-room"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://tedi:password@localhost:5432/tedi_public"
@@ -51,8 +60,17 @@ class Settings(BaseSettings):
     # Rate limiting
     SIGNUP_RATE_LIMIT: str = "5/minute"
 
-    # CORS
+    # CORS (public Tedi origins)
     CORS_ORIGINS: str = "https://bonecho.ai,http://localhost:3000"
+
+    # Admin / SSO
+    ADMIN_ALLOWED_DOMAIN: str = "bonecho.ai"
+    ADMIN_SESSION_SECRET: str = _ADMIN_SESSION_SECRET_DEV_DEFAULT
+    ADMIN_SESSION_TTL_SECONDS: int = 60 * 60 * 12  # 12h
+    ADMIN_UI_ORIGIN: str = "http://localhost:3001"
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
 
     @field_validator("ANTHROPIC_API_KEY")
     @classmethod
@@ -64,13 +82,39 @@ class Settings(BaseSettings):
             )
         return v
 
+    @model_validator(mode="after")
+    def _enforce_admin_secret_in_production(self) -> "Settings":
+        """Refuse to boot in production with the placeholder admin secret.
+
+        Local/dev keeps the convenience default so signed-cookie tests work
+        without setup. Anything signed with the placeholder is trivially
+        forgeable — production must set its own random value.
+        """
+        if self.APP_ENV == "production":
+            secret = (self.ADMIN_SESSION_SECRET or "").strip()
+            if (
+                not secret
+                or secret == _ADMIN_SESSION_SECRET_DEV_DEFAULT
+                or len(secret) < 32
+            ):
+                raise ValueError(
+                    "ADMIN_SESSION_SECRET must be set to a random value of "
+                    "at least 32 characters when APP_ENV=production."
+                )
+        return self
+
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",")]
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     @property
     def output_recipients_list(self) -> list[str]:
-        return [o.strip() for o in self.OUTPUT_RECIPIENTS.split(",")]
+        return [o.strip() for o in self.OUTPUT_RECIPIENTS.split(",") if o.strip()]
+
+    @property
+    def admin_cors_origins_list(self) -> list[str]:
+        """Admin/auth surface CORS — strictly the dashboard origin."""
+        return [o.strip() for o in self.ADMIN_UI_ORIGIN.split(",") if o.strip()]
 
 
 settings = Settings()

@@ -49,6 +49,25 @@ class Session(Base):
         nullable=True,
     )
     transcript_s3_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Generated artifacts (S3 keys within S3_BUCKET_NAME).
+    tdd_s3_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claude_md_s3_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Summaries surfaced to the admin dashboard.
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Follow-up tracking.
+    followup_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_manual_followup_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

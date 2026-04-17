@@ -7,6 +7,7 @@ import structlog
 from app.schemas import DiscoveryResponse, DiscoveryUpdate, SessionPhase
 from app.services.claude import ClaudeService
 from app.services.elevenlabs import ElevenLabsService
+from app.services.turn_persistence import schedule_persist_turn
 from app.session import (
     CONVERSATION_HISTORY_WINDOW,
     SessionManager,
@@ -57,8 +58,13 @@ class Orchestrator:
         async with session.lock:
             session.transcript.append({"speaker": "user", "text": text, "is_final": True})
             session.conversation_history.append({"role": "user", "content": text})
+            user_seq = session.next_turn_seq
+            session.next_turn_seq += 1
             # Update phase before processing so Claude sees current phase
             session.update_phase()
+
+        # Persist user turn off the hot path.
+        schedule_persist_turn(session_id, user_seq, "user", text)
 
         # Drop turn if already processing or speaking
         async with session.lock:
@@ -125,8 +131,15 @@ class Orchestrator:
                 session.conversation_history.append(
                     {"role": "assistant", "content": response.spoken_response}
                 )
+                agent_seq = session.next_turn_seq
+                session.next_turn_seq += 1
                 session.status = SessionStatus.SPEAKING
                 session.turn_state = TurnState.SPEAKING
+
+            # Persist agent turn off the hot path.
+            schedule_persist_turn(
+                session_id, agent_seq, "agent", response.spoken_response
+            )
 
             logger.info(
                 "turn_response_ready",

@@ -79,6 +79,10 @@ class SessionState:
         self.lock: asyncio.Lock = asyncio.Lock()
         self.active_request_id: str | None = None
 
+        # Monotonic counter for persisted conversation turns
+        # (incremented in lock-protected sections of the orchestrator).
+        self.next_turn_seq: int = 0
+
     def elapsed_minutes(self) -> float:
         """Return elapsed session time in minutes."""
         delta = datetime.now(timezone.utc) - self.session_start_time
