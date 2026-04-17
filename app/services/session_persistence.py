@@ -34,9 +34,10 @@ class SessionCompletionRecord:
 async def persist_session_completion(record: SessionCompletionRecord) -> None:
     """Update the sessions row with artifact + summary state and final status.
 
-    `email_sent` triggers `followup_sent_at` and `ended_at` to be stamped — we
-    treat the post-session output email as the "follow-up" that the cron worker
-    would otherwise queue.
+    `followup_sent_at` is intentionally NOT stamped here: that column is owned
+    by the 24hr scheduled follow-up worker (see `app/services/followup_email.py`),
+    which selects rows where `followup_sent_at IS NULL`. The initial artifact
+    delivery and the delayed follow-up are distinct states.
     """
     try:
         sid = uuid.UUID(record.session_id)
@@ -60,8 +61,6 @@ async def persist_session_completion(record: SessionCompletionRecord) -> None:
         values["summary"] = record.summary
     if record.business_summary is not None:
         values["business_summary"] = record.business_summary
-    if record.email_sent:
-        values["followup_sent_at"] = now
 
     async with async_session_factory() as db:
         await db.execute(
