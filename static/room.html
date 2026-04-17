@@ -65,6 +65,7 @@
       <div class="orb-container">
         <canvas id="orb-canvas" width="640" height="640"></canvas>
       </div>
+      <div class="ptt-hint" id="ptt-hint">Press and hold Spacebar to speak</div>
       <div class="brand-name">Tedi</div>
       <div class="status-text" id="status" aria-live="polite">Connecting...</div>
     </main>
@@ -72,7 +73,12 @@
     <!-- Right: Chat Transcript -->
     <aside class="transcript-panel" id="transcript-panel">
       <div class="panel-header">Conversation</div>
-      <div class="transcript-messages" id="transcript-messages"></div>
+      <div class="transcript-messages" id="transcript-messages">
+        <div class="transcript-msg tedi" data-intro="true">
+          <div class="msg-label">Tedi</div>
+          <div class="msg-bubble">Hi — I help create any agent or app.</div>
+        </div>
+      </div>
     </aside>
 
   </div>
