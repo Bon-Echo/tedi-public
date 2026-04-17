@@ -66,6 +66,9 @@ Output this exact JSON schema:
   ],
   "open_questions": [
     "string — unanswered question that needs follow-up"
+  ],
+  "requested_documents": [
+    "string — a specific document, dataset, sample, screenshot, schema, credential, or piece of information the BonEcho team should request from the client to move the project forward (e.g. 'sample invoice PDF', 'CRM API key', 'export of last 100 dispatch tickets'). Leave the array empty if nothing concrete was identified — do NOT invent items."
   ]
 }"""
 

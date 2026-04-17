@@ -25,17 +25,16 @@ async def notify_session_complete(
     user_email: str,
     business_summary: str,
     session_id: str,
-) -> None:
+) -> bool:
     """POST a session-completion alert to Slack #board-room.
 
-    Args:
-        user_email: The user's email address from signup.
-        business_summary: One-line business summary extracted from the session.
-        session_id: Unique session identifier for reference.
+    Returns True only when the Slack webhook actually accepted the POST.
+    If the webhook is not configured, or the request fails, returns False
+    (non-fatal — callers can record the real outcome without re-raising).
     """
     if not settings.SLACK_WEBHOOK_URL:
         logger.warning("slack_webhook_not_configured", session_id=session_id)
-        return
+        return False
 
     payload = {
         "channel": settings.SLACK_CHANNEL,
@@ -61,9 +60,12 @@ async def notify_session_complete(
             resp = await client.post(settings.SLACK_WEBHOOK_URL, json=payload)
             resp.raise_for_status()
         logger.info("slack_notification_sent", session_id=session_id, user_email=user_email)
+        return True
     except Exception as exc:
-        # Non-fatal — log and continue
+        # Non-fatal — log and continue, but surface the failure to the caller
+        # so the pipeline result reflects actual delivery status.
         logger.error("slack_notification_failed", session_id=session_id, error=str(exc))
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -100,11 +102,11 @@ async def send_session_output_email(
         f"Hi,\n\n"
         f"Here are the outputs from your Tedi AI discovery session for {project_name}.\n\n"
         f"Attached:\n"
-        f"  1. AI Agent Assessment — {safe_name}-Assessment.docx\n"
-        f"  2. CLAUDE.md — ready to drop into Claude Code to start building\n\n"
+        f"  1. AI Agent Assessment - {safe_name}-Assessment.docx\n"
+        f"  2. CLAUDE.md - ready to drop into Claude Code to start building\n\n"
         f"Want to talk through the findings and map out next steps?\n"
         f"Book a call with the BonEcho team: {settings.BOOKING_URL}\n\n"
-        f"— Tedi, BonEcho"
+        f"- Tedi, BonEcho"
     )
     msg.attach(MIMEText(body, "plain"))
 
@@ -131,6 +133,60 @@ def _attach_text(msg: MIMEMultipart, content: bytes, filename: str) -> None:
     part = MIMEApplication(content)
     part.add_header("Content-Disposition", "attachment", filename=filename)
     msg.attach(part)
+
+
+# ---------------------------------------------------------------------------
+# Info-request follow-up — sent right after the session output email when
+# Tedi captured concrete documents/data the team should request.
+# ---------------------------------------------------------------------------
+
+
+async def send_info_request_email(
+    *,
+    user_email: str,
+    project_name: str,
+    requested_documents: list[str],
+) -> None:
+    """Send the "requested documents" follow-up via the same SES path.
+
+    Caller is responsible for idempotency (a sent timestamp on the session row).
+    Skips silently if ``requested_documents`` is empty.
+    """
+    if not requested_documents:
+        return
+
+    safe_name = project_name or "your project"
+    bullets = "\n".join(f"  - {doc}" for doc in requested_documents)
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"A few things we'll need from you - {safe_name}"
+    msg["From"] = settings.SES_FROM_EMAIL
+    msg["To"] = user_email
+
+    body = (
+        f"Hi,\n\n"
+        f"Thanks again for the discovery session. To move {safe_name} forward, "
+        f"we'll need a few specific items from you:\n\n"
+        f"{bullets}\n\n"
+        f"Reply to this email with whatever's easiest - links, attachments, "
+        f"and screenshots all work.\n\n"
+        f"- Tedi, BonEcho"
+    )
+    msg.attach(MIMEText(body, "plain"))
+
+    recipients = [user_email]
+    for r in settings.OUTPUT_RECIPIENTS.split(","):
+        r = r.strip()
+        if r and r not in recipients:
+            recipients.append(r)
+
+    await _send_raw_email(settings.SES_FROM_EMAIL, recipients, msg)
+    logger.info(
+        "info_request_email_sent",
+        recipients=recipients,
+        project_name=project_name,
+        item_count=len(requested_documents),
+    )
 
 
 async def _send_raw_email(

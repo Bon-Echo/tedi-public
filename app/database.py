@@ -3,12 +3,20 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    echo=settings.DEBUG,
-)
+def _engine_kwargs() -> dict:
+    """Per-driver engine kwargs.
+
+    SQLite (used in tests via aiosqlite) does not accept pool_size /
+    max_overflow when running on the default StaticPool, so we omit them.
+    """
+    kw: dict = {"echo": settings.DEBUG}
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        kw["pool_size"] = settings.DATABASE_POOL_SIZE
+        kw["max_overflow"] = settings.DATABASE_MAX_OVERFLOW
+    return kw
+
+
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs())
 
 async_session_factory = async_sessionmaker(
     engine,
