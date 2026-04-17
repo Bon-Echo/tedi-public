@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     SES_REGION: str = "us-east-1"
     OUTPUT_RECIPIENTS: str = "labeeb@bonecho.ai,deep@bonecho.ai,sifat@bonecho.ai"
 
+    # BonEcho delivery config
+    BONECHO_INTERNAL_EMAIL: str = ""   # BonEcho internal recipient for dual-send
+    BONECHO_BOOKING_URL: str = ""      # CTA booking link (skip CTA if empty)
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://tedi:password@localhost:5432/tedi_public"
     DATABASE_POOL_SIZE: int = 10

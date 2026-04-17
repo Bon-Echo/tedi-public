@@ -12,6 +12,7 @@ import structlog
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import settings
+from app.models.artifacts import SessionArtifacts
 from app.services.claude import ClaudeService, ClaudeServiceError
 from app.services.notifications import notify_session_complete, send_session_output_email
 from app.services.tdd_generator import TDDGenerator
@@ -203,28 +204,29 @@ async def run_post_session_pipeline(
         result.errors.append(f"Context S3 upload failed: {s3_results[3]}")
 
     # -------------------------------------------------------------------------
-    # Step 4 — Email delivery (send whatever we have; skip if nothing generated)
+    # Step 4 — Email delivery (discovery doc + CLAUDE.md only)
     # -------------------------------------------------------------------------
-    any_generated = any(
-        x is not None
-        for x in [tdd_docx_bytes, claude_md_content, skills_content, context_content]
+    tdd_doc_bytes = tdd_docx_bytes or _empty_docx()
+    tdd_doc_name = tdd_filename or f"{safe_name}-TDD.docx"
+    project_name = (
+        tdd_result.get("project_name") or company_name
+        if not isinstance(tdd_result, Exception)
+        else company_name
     )
 
-    if any_generated:
-        tdd_doc_name = tdd_filename or f"{safe_name}_TDD.docx"
-        project_name = (
-            tdd_result.get("project_name") or company_name
-            if not isinstance(tdd_result, Exception)
-            else company_name
+    if tdd_docx_bytes is not None or claude_md_content is not None:
+        artifacts = SessionArtifacts(
+            discovery_doc=tdd_doc_bytes,
+            discovery_doc_filename=tdd_doc_name,
+            discovery_doc_mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            claude_md=claude_md_content or "(CLAUDE.md generation failed)",
+            claude_md_filename="CLAUDE.md",
         )
         try:
             await send_session_output_email(
                 user_email=user_email,
                 project_name=project_name,
-                tdd_docx_bytes=tdd_docx_bytes or _empty_docx(),
-                claude_md_content=claude_md_content or "(CLAUDE.md generation failed)",
-                skills_content=skills_content or "(Skills generation failed)",
-                context_content=context_content or "(Context generation failed)",
+                artifacts=artifacts,
             )
             result.email_sent = True
             logger.info("post_session_email_sent", session_id=session_id, user_email=user_email)
@@ -232,8 +234,8 @@ async def run_post_session_pipeline(
             result.errors.append(f"Email delivery failed: {exc}")
             logger.error("post_session_email_failed", session_id=session_id, error=str(exc))
     else:
-        result.errors.append("All generation tasks failed — no email sent")
-        logger.error("post_session_all_generation_failed", session_id=session_id)
+        result.errors.append("TDD and CLAUDE.md both failed — no email sent")
+        logger.error("post_session_email_skipped", session_id=session_id)
 
     # -------------------------------------------------------------------------
     # Step 5 — Slack notification
