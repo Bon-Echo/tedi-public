@@ -85,6 +85,34 @@ body::before {
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
+.ptt-hint {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--cream-muted);
+  letter-spacing: 0.04em;
+  margin-bottom: 14px;
+  user-select: none;
+  opacity: 0.55;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.ptt-hint.ready {
+  color: var(--gold);
+  opacity: 1;
+  animation: pttHintPulse 2.2s ease-in-out infinite;
+}
+
+.ptt-hint.active {
+  color: var(--gold);
+  opacity: 1;
+  animation: none;
+}
+
+@keyframes pttHintPulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
 .status-text {
   font-family: var(--font-body);
   font-size: 15px;

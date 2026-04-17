@@ -39,6 +39,7 @@ const orbCanvas      = document.getElementById('orb-canvas');
 const transcriptEl   = document.getElementById('transcript-messages');
 const muteBtn        = document.getElementById('mute-btn');
 const endBtn         = document.getElementById('end-btn');
+const pttHintEl      = document.getElementById('ptt-hint');
 
 // ── Logging ───────────────────────────────────────────────
 function log(msg) {
@@ -64,6 +65,9 @@ let vadInterval     = null;
 let sessionEnded    = false;
 let reconnectCount  = 0;
 let isMuted         = false;
+let isSpaceHeld     = false;
+let isThinking      = false;
+let assistantTurnActive = false;
 let playbackAnalyser = null;
 const MAX_RECONNECTS = 3;
 const RECONNECT_DELAY= 2000;
@@ -97,6 +101,19 @@ function setStatus(msg, mode) {
   statusEl.textContent = msg;
   statusEl.classList.toggle('thinking-dots', mode === 'thinking');
   if (window.TediOrb) TediOrb.setState(mode || 'listening');
+}
+
+function idleStatusText() {
+  if (isMuted) return 'Muted';
+  return isSpaceHeld ? 'Listening...' : 'Ready';
+}
+
+function refreshPttHintReady() {
+  if (!pttHintEl) return;
+  const wsOpen = ws && ws.readyState === WebSocket.OPEN;
+  const ready  = wsOpen && !sessionEnded && !isMuted
+              && !isSpaceHeld && !assistantTurnActive;
+  pttHintEl.classList.toggle('ready', ready);
 }
 
 // ── Transcript ────────────────────────────────────────────
@@ -151,6 +168,7 @@ function showEndScreen() {
   stopTimer();
   stopPlayback();
   stopSpeechRecognition();
+  if (pttHintEl) pttHintEl.classList.remove('ready', 'active');
   if (window.TediOrb) TediOrb.dispose();
 
   log('Session ended — showing end screen');
@@ -183,7 +201,8 @@ function connectWebSocket() {
     log('WebSocket connected');
     reconnectCount = 0;
     startTimer();
-    setStatus('Listening...', 'listening');
+    setStatus(idleStatusText(), 'listening');
+    refreshPttHintReady();
     ws.send(JSON.stringify({ type: 'ready' }));
   };
 
@@ -224,6 +243,9 @@ function handleServerMessage(msg) {
   switch (msg.type) {
     case 'thinking_start':
       log('Tedi is thinking...');
+      isThinking = true;
+      assistantTurnActive = true;
+      refreshPttHintReady();
       setStatus('Thinking', 'thinking');
       break;
 
@@ -232,6 +254,9 @@ function handleServerMessage(msg) {
       stopPlayback();                    // stop any in-progress audio first
       currentRequestId = msg.request_id;
       mp3Chunks        = [];
+      isThinking = false;
+      assistantTurnActive = true;
+      refreshPttHintReady();
       setStatus('Speaking...', 'speaking');
       if (msg.spoken_text) {
         addTranscriptMessage('tedi', msg.spoken_text);
@@ -318,7 +343,7 @@ async function playBufferedAudio() {
     };
     activeSource.start(0);
     log(`Playing ${audioBuffer.duration.toFixed(2)}s`);
-    stopSpeechRecognition();  // pause STT to prevent echo feedback
+    // STT is push-to-talk only — nothing to pause during playback.
     pollPlaybackLevel();
   } catch (e) {
     log(`Audio decode error: ${e.message}`);
@@ -342,16 +367,21 @@ function pollPlaybackLevel() {
 
 function finishPlayback() {
   isPlaying = false;
+  isThinking = false;
+  assistantTurnActive = false;
   if (window.TediOrb) TediOrb.setPlaybackLevel(0);
-  setStatus('Listening...', 'listening');
+  setStatus(idleStatusText(), 'listening');
+  refreshPttHintReady();
   if (ws && ws.readyState === WebSocket.OPEN && currentRequestId) {
     ws.send(JSON.stringify({ type: 'playback_finished', request_id: currentRequestId }));
   }
-  // Resume STT now that playback is done (no more echo risk)
-  startSpeechRecognition();
+  // STT is push-to-talk only — do not auto-start here.
 }
 
 function stopPlayback() {
+  // Note: this intentionally does NOT touch the transcript. The Tedi reply
+  // bubble was added on `response_start` with the full spoken_text, so a
+  // barge-in mid-utterance preserves the complete reply on screen.
   if (activeSource) {
     try {
       activeSource.onended = null;
@@ -361,9 +391,12 @@ function stopPlayback() {
   }
   mp3Chunks        = [];
   isPlaying        = false;
+  isThinking       = false;
+  assistantTurnActive = false;
   currentRequestId = null;
   if (window.TediOrb) TediOrb.setPlaybackLevel(0);
-  if (!sessionEnded) setStatus('Listening...', 'listening');
+  if (!sessionEnded) setStatus(idleStatusText(), 'listening');
+  refreshPttHintReady();
   log('Playback stopped');
 }
 
@@ -389,23 +422,15 @@ async function initVAD() {
       for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
       const rms = Math.sqrt(sum / dataArray.length);
 
-      // Feed mic level to orb
-      if (window.TediOrb) TediOrb.setAudioLevel(Math.min(rms * 10, 1.0));
-
-      if (rms > VAD_THRESHOLD) {
-        const now = Date.now();
-        if (isPlaying && (now - lastSpeechTime) > VAD_DEBOUNCE_MS) {
-          log(`BARGE-IN (RMS: ${rms.toFixed(4)})`);
-          stopPlayback();
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'barge_in' }));
-          }
-        }
-        lastSpeechTime = now;
+      // Only visualize mic level on the orb while the user is actively
+      // pushing-to-talk; otherwise the orb should not react to ambient sound.
+      if (window.TediOrb) {
+        const level = (isSpaceHeld && !isMuted) ? Math.min(rms * 10, 1.0) : 0;
+        TediOrb.setAudioLevel(level);
       }
     }, VAD_POLL_MS);
 
-    log('VAD initialized');
+    log('VAD initialized (visualization only; barge-in handled by Space PTT)');
 
     // Initialize speech recognition after mic access is granted
     initSpeechRecognition();
@@ -455,12 +480,13 @@ function initSpeechRecognition() {
 
   recognition.onend = () => {
     recognitionActive = false;
-    if (!sessionEnded && !isMuted) {
+    // Push-to-talk: if the user is still holding Space when the recognizer
+    // auto-ends (e.g. after a long pause), restart it so capture continues
+    // until they release Space. Otherwise, leave it stopped.
+    if (!sessionEnded && !isMuted && isSpaceHeld) {
       startSpeechRecognition();
     }
   };
-
-  startSpeechRecognition();
 }
 
 function startSpeechRecognition() {
@@ -484,6 +510,52 @@ function stopSpeechRecognition() {
 }
 
 // ── Controls ─────────────────────────────────────────────
+function isEditableTarget(t) {
+  if (!t) return false;
+  const tag = (t.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return !!t.isContentEditable;
+}
+
+function pttStart() {
+  if (sessionEnded || isMuted) return;
+  if (isSpaceHeld) return;  // already active (key repeat)
+  isSpaceHeld = true;
+
+  if (pttHintEl) pttHintEl.classList.add('active');
+  refreshPttHintReady();
+
+  // If an assistant turn is in-flight (thinking OR speaking), barge-in: the
+  // server drops speech_final while turn_state is PROCESSING/SPEAKING, so we
+  // MUST send barge_in first to reset turn_state to IDLE. The Tedi reply
+  // bubble (added at response_start) is preserved.
+  if (assistantTurnActive) {
+    log('PTT barge-in');
+    stopPlayback();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'barge_in' }));
+    }
+  }
+
+  setStatus('Listening...', 'listening');
+  startSpeechRecognition();
+}
+
+function pttStop() {
+  if (!isSpaceHeld) return;
+  isSpaceHeld = false;
+
+  if (pttHintEl) pttHintEl.classList.remove('active');
+
+  stopSpeechRecognition();
+
+  // Restore idle status unless a response is already in-flight.
+  if (!isPlaying && !isThinking && !sessionEnded) {
+    setStatus(idleStatusText(), 'listening');
+  }
+  refreshPttHintReady();
+}
+
 function initControls() {
   // Mute button
   muteBtn.addEventListener('click', () => {
@@ -494,17 +566,17 @@ function initControls() {
       vadStream.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
     }
 
-    // Stop/start speech recognition
-    if (isMuted) {
-      stopSpeechRecognition();
-    } else {
-      startSpeechRecognition();
+    // If muted mid-hold, force-stop capture.
+    if (isMuted && isSpaceHeld) {
+      pttStop();
     }
 
     // Update UI
     muteBtn.classList.toggle('muted', isMuted);
     muteBtn.querySelector('.mic-icon').classList.toggle('hidden', isMuted);
     muteBtn.querySelector('.muted-icon').classList.toggle('hidden', !isMuted);
+    if (!isPlaying && !isThinking && !sessionEnded) setStatus(idleStatusText(), 'listening');
+    refreshPttHintReady();
     log(isMuted ? 'Mic muted' : 'Mic unmuted');
   });
 
@@ -516,6 +588,34 @@ function initControls() {
       ws.close(1000, 'user_ended');
     }
     showEndScreen();
+  });
+
+  // ── Push-to-talk: Space only ──
+  // Using keydown/keyup on window so we reliably intercept Space before the
+  // browser's default scroll/activation behavior.
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (isEditableTarget(e.target)) return;  // allow typing a space
+    // Avoid page scroll and activating a focused button.
+    e.preventDefault();
+    if (e.repeat) return;
+    pttStart();
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (isEditableTarget(e.target)) return;
+    e.preventDefault();
+    pttStop();
+  });
+
+  // Reset capture if the page loses focus (alt-tab, window switch, etc.)
+  // so we never get stuck in a "Space held" state when the keyup is missed.
+  const cancelPtt = () => { if (isSpaceHeld) pttStop(); };
+  window.addEventListener('blur', cancelPtt);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) cancelPtt();
   });
 }
 
