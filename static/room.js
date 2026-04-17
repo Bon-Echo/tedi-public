@@ -40,6 +40,7 @@ const transcriptEl   = document.getElementById('transcript-messages');
 const muteBtn        = document.getElementById('mute-btn');
 const endBtn         = document.getElementById('end-btn');
 const pttHintEl      = document.getElementById('ptt-hint');
+const pttTouchBtn    = document.getElementById('ptt-touch-btn');
 
 // ── Logging ───────────────────────────────────────────────
 function log(msg) {
@@ -110,9 +111,11 @@ function idleStatusText() {
 
 function refreshPttHintReady() {
   if (!pttHintEl) return;
-  const wsOpen = ws && ws.readyState === WebSocket.OPEN;
-  const ready  = wsOpen && !sessionEnded && !isMuted
-              && !isSpaceHeld && !assistantTurnActive;
+  // Show the hint as "ready" from first render — it only dims when the user
+  // is actively holding PTT, when we're in an assistant turn, when muted,
+  // or after the session has ended. Before the WebSocket connects we still
+  // show the cue so the user learns the interaction immediately.
+  const ready = !sessionEnded && !isMuted && !isSpaceHeld && !assistantTurnActive;
   pttHintEl.classList.toggle('ready', ready);
 }
 
@@ -617,6 +620,33 @@ function initControls() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) cancelPtt();
   });
+
+  // ── Touch-friendly fallback: press-and-hold button ──
+  // Behaves identically to the Space key: holding starts capture, releasing
+  // or cancelling stops it. Both touch and mouse events are wired so the
+  // button also works on a desktop as a visible affordance.
+  if (pttTouchBtn) {
+    const touchStart = (e) => {
+      e.preventDefault();
+      pttTouchBtn.classList.add('active');
+      pttStart();
+    };
+    const touchEnd = (e) => {
+      e.preventDefault();
+      pttTouchBtn.classList.remove('active');
+      pttStop();
+    };
+    pttTouchBtn.addEventListener('touchstart', touchStart, { passive: false });
+    pttTouchBtn.addEventListener('touchend',   touchEnd,   { passive: false });
+    pttTouchBtn.addEventListener('touchcancel', touchEnd,  { passive: false });
+    pttTouchBtn.addEventListener('mousedown',  touchStart);
+    pttTouchBtn.addEventListener('mouseup',    touchEnd);
+    pttTouchBtn.addEventListener('mouseleave', (e) => {
+      if (isSpaceHeld) { pttTouchBtn.classList.remove('active'); pttStop(); }
+    });
+    // Avoid click-to-focus keeping focus on the button so Space still works.
+    pttTouchBtn.addEventListener('click', (e) => { e.preventDefault(); pttTouchBtn.blur(); });
+  }
 }
 
 // ── Bootstrap ─────────────────────────────────────────────
@@ -644,6 +674,10 @@ async function main() {
 
   // Init controls
   initControls();
+
+  // Show the push-to-talk hint in its "ready" state from first render so
+  // the user learns the interaction before the WS handshake completes.
+  refreshPttHintReady();
 
   // Connect WebSocket
   connectWebSocket();

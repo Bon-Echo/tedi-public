@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+{% set active_nav = 'signups' %}
+{% block title %}Signups — Tedi Admin{% endblock %}
+
+{% block content %}
+<section class="admin-section">
+  <div class="admin-section-header">
+    <div>
+      <h1 class="admin-h1">Signups</h1>
+      <p class="admin-sub">{{ total }} total · showing page {{ page }} of {{ total_pages }}</p>
+    </div>
+    <a class="admin-btn" href="/admin/signups.csv">Download CSV</a>
+  </div>
+
+  <form class="admin-filter-bar" method="get" action="/admin/signups">
+    <input
+      type="search"
+      name="q"
+      value="{{ q }}"
+      placeholder="Search by email"
+      class="admin-input"
+      autocomplete="off"
+    >
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+    <button type="submit" class="admin-btn admin-btn-primary">Search</button>
+    {% if q %}<a class="admin-link" href="/admin/signups">Clear</a>{% endif %}
+  </form>
+
+  {% if signups %}
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Sessions</th>
+        <th>Signed up</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in signups %}
+      <tr>
+        <td>{{ u.email }}</td>
+        <td>{{ u.session_count }}</td>
+        <td class="muted">{{ u.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No signups match this filter.</p>
+  {% endif %}
+
+  {% if total_pages > 1 %}
+  <nav class="admin-pagination">
+    {% if page > 1 %}
+      <a class="admin-link" href="/admin/signups?page={{ page - 1 }}&per_page={{ per_page }}{% if q %}&q={{ q }}{% endif %}">← Prev</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="admin-link" href="/admin/signups?page={{ page + 1 }}&per_page={{ per_page }}{% if q %}&q={{ q }}{% endif %}">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

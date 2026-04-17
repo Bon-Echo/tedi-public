@@ -65,8 +65,14 @@
       <div class="orb-container">
         <canvas id="orb-canvas" width="640" height="640"></canvas>
       </div>
-      <div class="ptt-hint" id="ptt-hint">Hold Spacebar to speak</div>
       <div class="brand-name">Tedi</div>
+      <div class="ptt-hint ready" id="ptt-hint" aria-live="polite">
+        <span class="ptt-hint-desktop">Press and hold <kbd>Spacebar</kbd> to speak</span>
+        <span class="ptt-hint-touch">Press and hold the button to speak</span>
+      </div>
+      <button type="button" id="ptt-touch-btn" class="ptt-touch-btn" aria-label="Press and hold to speak">
+        <span>Hold to speak</span>
+      </button>
       <div class="status-text" id="status" aria-live="polite">Connecting...</div>
     </main>
 
@@ -76,7 +82,7 @@
       <div class="transcript-messages" id="transcript-messages">
         <div class="transcript-msg tedi" data-intro="true">
           <div class="msg-label">Tedi</div>
-          <div class="msg-bubble">Hi — I'm Tedi. Press and hold the Spacebar to talk.</div>
+          <div class="msg-bubble">Hi — I'm Tedi. I help you create an AI agent or app for your business.</div>
         </div>
       </div>
     </aside>
