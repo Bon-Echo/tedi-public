@@ -34,12 +34,12 @@ class TurnState(str, Enum):
 
 
 # Phase transition thresholds (minutes)
-PHASE_DISCOVERY_START = 2.0
-PHASE_WRAPPING_UP_START = 15.0
-PHASE_CLOSING_START = 18.0
+PHASE_DISCOVERY_START = 1.0
+PHASE_WRAPPING_UP_START = 7.0
+PHASE_CLOSING_START = 8.0
 
 # Conversation history window (number of messages to send to Claude)
-CONVERSATION_HISTORY_WINDOW = 40
+CONVERSATION_HISTORY_WINDOW = 30
 
 
 class SessionState:
@@ -59,20 +59,16 @@ class SessionState:
         self.transcript: list[dict[str, Any]] = []
         self.conversation_history: list[dict[str, str]] = []
 
-        # Discovery-specific state (replaces tdd_sections)
+        # Discovery-specific state (3 generalized areas)
         self.discovery_sections: dict[str, str] = {
-            "business_overview": "",
-            "dispatch_capacity": "",
-            "hiring_seasonality": "",
-            "fleet_equipment": "",
-            "knowledge_transfer": "",
+            "business_context": "",
+            "pain_points": "",
+            "agent_opportunities": "",
         }
         self.coverage: dict[str, int] = {
-            "business_overview": 0,
-            "dispatch_capacity": 0,
-            "hiring_seasonality": 0,
-            "fleet_equipment": 0,
-            "knowledge_transfer": 0,
+            "business_context": 0,
+            "pain_points": 0,
+            "agent_opportunities": 0,
         }
 
         # Session timing
