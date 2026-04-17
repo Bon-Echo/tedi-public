@@ -15,6 +15,10 @@ from app.config import settings
 from app.services.claude import ClaudeService, ClaudeServiceError
 from app.services.notifications import notify_session_complete, send_session_output_email
 from app.services.tdd_generator import TDDGenerator
+from app.services.session_persistence import (
+    persist_session_completion,
+    SessionCompletionRecord,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -201,6 +205,39 @@ async def run_post_session_pipeline(
         logger.error("post_session_slack_failed", session_id=session_id, error=str(exc))
 
     result.success = result.email_sent or result.slack_sent
+
+    # -------------------------------------------------------------------------
+    # Step 6 — Persist artifact + summary references onto the session row so
+    # the admin dashboard can surface them later.
+    # -------------------------------------------------------------------------
+    summary_text: str | None = None
+    business_summary_text: str | None = None
+    if not isinstance(tdd_result, Exception):
+        business_summary_text = (tdd_result.get("business_overview") or None)
+        summary_text = (
+            tdd_result.get("executive_summary")
+            or tdd_result.get("summary")
+            or business_summary_text
+        )
+
+    try:
+        await persist_session_completion(
+            SessionCompletionRecord(
+                session_id=session_id,
+                tdd_s3_key=result.tdd_s3_key,
+                claude_md_s3_key=result.claude_md_s3_key,
+                summary=summary_text,
+                business_summary=business_summary_text,
+                email_sent=result.email_sent,
+                final_status="COMPLETED" if result.success else "ERROR",
+            )
+        )
+    except Exception as exc:
+        result.errors.append(f"Session row update failed: {exc}")
+        logger.error(
+            "post_session_db_persist_failed", session_id=session_id, error=str(exc)
+        )
+
     logger.info(
         "post_session_pipeline_complete",
         session_id=session_id,

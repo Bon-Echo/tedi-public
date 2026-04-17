@@ -25,7 +25,8 @@ async def send_pending_followups(db: AsyncSession) -> int:
     """Query for sessions due a follow-up email and send them.
 
     Selects sessions where:
-    - status = 'completed'
+    - status = 'COMPLETED' (matches the uppercase value the post-session
+      pipeline writes via session_persistence)
     - ended_at is between 23.5 and 24.5 hours ago
     - followup_sent_at IS NULL
 
@@ -37,7 +38,7 @@ async def send_pending_followups(db: AsyncSession) -> int:
         SELECT s.id, s.user_id, u.email, s.business_summary
         FROM sessions s
         JOIN users u ON u.id = s.user_id
-        WHERE s.status = 'completed'
+        WHERE s.status = 'COMPLETED'
           AND s.ended_at BETWEEN NOW() - INTERVAL '24.5 hours'
                                AND NOW() - INTERVAL '23.5 hours'
           AND s.followup_sent_at IS NULL
