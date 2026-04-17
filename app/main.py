@@ -18,6 +18,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import settings
 from app.database import init_db, close_db
 from app.middleware.rate_limit import limiter
+from app.routers import admin as admin_router
 from app.routers import health
 from app.routers import signup, session_router
 from app.routers import ws as ws_router
@@ -170,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(signup.router)
     app.include_router(session_router.router)
     app.include_router(ws_router.router)
+    app.include_router(admin_router.router)
 
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
     if os.path.isdir(static_dir):

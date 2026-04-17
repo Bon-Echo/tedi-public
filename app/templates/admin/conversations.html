@@ -1,0 +1,83 @@
+{% extends "admin/base.html" %}
+{% set active_nav = 'conversations' %}
+{% block title %}Conversations — Tedi Admin{% endblock %}
+
+{% block content %}
+<section class="admin-section">
+  <div class="admin-section-header">
+    <div>
+      <h1 class="admin-h1">Conversations</h1>
+      <p class="admin-sub">{{ total }} total · showing page {{ page }} of {{ total_pages }}</p>
+    </div>
+  </div>
+
+  <form class="admin-filter-bar" method="get" action="/admin/conversations">
+    <input
+      type="search"
+      name="q"
+      value="{{ q }}"
+      placeholder="Search by email"
+      class="admin-input"
+      autocomplete="off"
+    >
+    <select name="status" class="admin-input">
+      <option value="">All statuses</option>
+      {% for s in status_choices %}
+        <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+    <button type="submit" class="admin-btn admin-btn-primary">Filter</button>
+    {% if q or status %}<a class="admin-link" href="/admin/conversations">Clear</a>{% endif %}
+  </form>
+
+  {% if conversations %}
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Transcript</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in conversations %}
+      <tr>
+        <td>
+          <a href="/admin/conversations/{{ c.id }}">{{ c.email }}</a>
+          {% if c.is_live %}<span class="admin-dot admin-dot-live" title="Live"></span>{% endif %}
+        </td>
+        <td><span class="admin-pill {{ c.status_class }}">{{ c.status }}</span></td>
+        <td class="muted">{{ c.created_at }}</td>
+        <td class="muted">{{ c.started_at }}</td>
+        <td class="muted">{{ c.ended_at }}</td>
+        <td>{% if c.has_transcript %}<span class="admin-pill ok">Stored</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td><a class="admin-link" href="/admin/conversations/{{ c.id }}">Open →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No conversations match this filter.</p>
+  {% endif %}
+
+  {% if total_pages > 1 %}
+  <nav class="admin-pagination">
+    {% set qs = 'per_page=' ~ per_page %}
+    {% if q %}{% set qs = qs ~ '&q=' ~ q %}{% endif %}
+    {% if status %}{% set qs = qs ~ '&status=' ~ status %}{% endif %}
+    {% if page > 1 %}
+      <a class="admin-link" href="/admin/conversations?page={{ page - 1 }}&{{ qs }}">← Prev</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="admin-link" href="/admin/conversations?page={{ page + 1 }}&{{ qs }}">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

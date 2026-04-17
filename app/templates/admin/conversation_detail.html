@@ -1,0 +1,104 @@
+{% extends "admin/base.html" %}
+{% set active_nav = 'conversations' %}
+{% block title %}Conversation {{ conversation.id[:8] }} — Tedi Admin{% endblock %}
+
+{% block content %}
+<section class="admin-section">
+  <a href="/admin/conversations" class="admin-link">← Back to conversations</a>
+
+  <div class="admin-section-header">
+    <div>
+      <h1 class="admin-h1">Conversation</h1>
+      <p class="admin-sub mono">{{ conversation.id }}</p>
+    </div>
+    <div class="admin-pill {{ conversation.status_class }}">
+      {{ conversation.status }}{% if is_live %} · LIVE{% endif %}
+    </div>
+  </div>
+
+  <div class="admin-metric-grid">
+    <div class="admin-metric">
+      <div class="admin-metric-label">User</div>
+      <div class="admin-metric-value admin-metric-value-sm">{{ conversation.email }}</div>
+    </div>
+    <div class="admin-metric">
+      <div class="admin-metric-label">Created</div>
+      <div class="admin-metric-value admin-metric-value-sm">{{ conversation.created_at }}</div>
+    </div>
+    <div class="admin-metric">
+      <div class="admin-metric-label">Started</div>
+      <div class="admin-metric-value admin-metric-value-sm">{{ conversation.started_at }}</div>
+    </div>
+    <div class="admin-metric">
+      <div class="admin-metric-label">Ended</div>
+      <div class="admin-metric-value admin-metric-value-sm">{{ conversation.ended_at }}</div>
+    </div>
+    {% if conversation.duration_s is not none %}
+    <div class="admin-metric">
+      <div class="admin-metric-label">Duration</div>
+      <div class="admin-metric-value admin-metric-value-sm">
+        {{ '%d:%02d' % (conversation.duration_s // 60, conversation.duration_s % 60) }}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{% if is_live and live_summary %}
+<section class="admin-section">
+  <h2 class="admin-h2">Live session state</h2>
+  <div class="admin-chip-row">
+    <span class="admin-chip">Phase · <strong>{{ live_summary.phase }}</strong></span>
+    <span class="admin-chip">Status · <strong>{{ live_summary.status }}</strong></span>
+    <span class="admin-chip">Turn · <strong>{{ live_summary.turn_state }}</strong></span>
+    <span class="admin-chip">Elapsed · <strong>{{ live_summary.elapsed_minutes }} min</strong></span>
+  </div>
+
+  {% if live_summary.discovery_sections %}
+  <h3 class="admin-h3">Discovery coverage</h3>
+  <div class="admin-discovery-grid">
+    {% for area, content in live_summary.discovery_sections.items() %}
+    <div class="admin-discovery-card">
+      <div class="admin-discovery-head">
+        <span class="admin-discovery-area">{{ area.replace('_', ' ').title() }}</span>
+        <span class="admin-discovery-pct">{{ live_summary.coverage.get(area, 0) }}%</span>
+      </div>
+      <div class="admin-discovery-bar">
+        <div class="admin-discovery-fill" style="width: {{ live_summary.coverage.get(area, 0) }}%;"></div>
+      </div>
+      <pre class="admin-discovery-body">{{ content or '—' }}</pre>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="admin-section">
+  <h2 class="admin-h2">Transcript</h2>
+  {% if transcript %}
+    <div class="admin-transcript">
+      {% for msg in transcript %}
+        {% set speaker = msg.get('speaker') or msg.get('role') or 'tedi' %}
+        {% set is_user = speaker in ('user', 'human') %}
+        <div class="admin-msg{% if is_user %} admin-msg-user{% else %} admin-msg-tedi{% endif %}">
+          <div class="admin-msg-label">{{ 'User' if is_user else 'Tedi' }}</div>
+          <div class="admin-msg-bubble">{{ msg.get('text') or msg.get('content') or '' }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <details class="admin-raw">
+      <summary>Raw transcript JSON</summary>
+      <pre>{{ transcript_json }}</pre>
+    </details>
+  {% elif conversation.transcript_s3_uri %}
+    <p class="muted">Transcript archived to S3.</p>
+    <pre class="admin-raw-line">{{ conversation.transcript_s3_uri }}</pre>
+  {% else %}
+    <p class="muted">
+      No in-memory transcript is available for this session.
+      {% if not is_live %}The conversation has ended and the live transcript has been released.{% endif %}
+    </p>
+  {% endif %}
+</section>
+{% endblock %}

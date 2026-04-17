@@ -1,0 +1,113 @@
+{% extends "admin/base.html" %}
+{% set active_nav = 'home' %}
+{% block title %}Overview — Tedi Admin{% endblock %}
+
+{% block content %}
+<section class="admin-section">
+  <h1 class="admin-h1">Overview</h1>
+  <p class="admin-sub">Signups, live conversations, and recent activity.</p>
+
+  <div class="admin-metric-grid">
+    <div class="admin-metric">
+      <div class="admin-metric-label">Total signups</div>
+      <div class="admin-metric-value">{{ metrics.total_users }}</div>
+    </div>
+    <div class="admin-metric">
+      <div class="admin-metric-label">Total sessions</div>
+      <div class="admin-metric-value">{{ metrics.total_sessions }}</div>
+    </div>
+    <div class="admin-metric">
+      <div class="admin-metric-label">Sessions today</div>
+      <div class="admin-metric-value">{{ metrics.today_sessions }}</div>
+    </div>
+    <div class="admin-metric">
+      <div class="admin-metric-label">Live now</div>
+      <div class="admin-metric-value">{{ metrics.live_sessions }}</div>
+    </div>
+  </div>
+</section>
+
+{% if status_breakdown %}
+<section class="admin-section">
+  <h2 class="admin-h2">Session status breakdown</h2>
+  <div class="admin-chip-row">
+    {% for status, count in status_breakdown.items() %}
+      <span class="admin-chip">{{ status }} · <strong>{{ count }}</strong></span>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if live_sessions %}
+<section class="admin-section">
+  <h2 class="admin-h2">Live sessions</h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Session</th>
+        <th>Phase</th>
+        <th>Status</th>
+        <th>Elapsed</th>
+        <th>Transcript size</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in live_sessions %}
+      <tr>
+        <td class="mono"><a href="/admin/conversations/{{ s.session_id }}">{{ s.session_id[:8] }}…</a></td>
+        <td>{{ s.session_phase }}</td>
+        <td>{{ s.status }}</td>
+        <td>{{ s.elapsed_minutes }} min</td>
+        <td>{{ s.transcript_length }}</td>
+        <td><a class="admin-link" href="/admin/conversations/{{ s.session_id }}">Open →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<div class="admin-two-col">
+  <section class="admin-section">
+    <h2 class="admin-h2">Recent signups</h2>
+    {% if recent_signups %}
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Signed up</th></tr></thead>
+      <tbody>
+        {% for u in recent_signups %}
+        <tr>
+          <td>{{ u.email }}</td>
+          <td class="muted">{{ u.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <a href="/admin/signups" class="admin-link">See all signups →</a>
+    {% else %}
+    <p class="muted">No signups yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="admin-section">
+    <h2 class="admin-h2">Recent conversations</h2>
+    {% if recent_sessions %}
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody>
+        {% for c in recent_sessions %}
+        <tr>
+          <td><a href="/admin/conversations/{{ c.id }}">{{ c.email }}</a></td>
+          <td><span class="admin-pill {{ c.status_class }}">{{ c.status }}</span></td>
+          <td class="muted">{{ c.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <a href="/admin/conversations" class="admin-link">See all conversations →</a>
+    {% else %}
+    <p class="muted">No conversations yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

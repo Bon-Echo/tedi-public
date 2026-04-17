@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Admin — Tedi{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/admin/admin.css">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <div class="admin-header-inner">
+      <a href="/admin" class="admin-brand">
+        <span class="admin-brand-mark">BonEcho</span>
+        <span class="admin-brand-sub">Tedi Admin</span>
+      </a>
+      <nav class="admin-nav">
+        <a href="/admin" class="admin-nav-link{% if active_nav == 'home' %} active{% endif %}">Overview</a>
+        <a href="/admin/signups" class="admin-nav-link{% if active_nav == 'signups' %} active{% endif %}">Signups</a>
+        <a href="/admin/conversations" class="admin-nav-link{% if active_nav == 'conversations' %} active{% endif %}">Conversations</a>
+      </nav>
+      <div class="admin-user">
+        <span class="admin-user-label">Signed in as</span>
+        <span class="admin-user-email">{{ admin_email }}</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-main">
+    <div class="admin-container">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <footer class="admin-footer">
+    <span>BonEcho · Tedi</span>
+    <span class="admin-footer-note">Access restricted to @bonecho.ai accounts.</span>
+  </footer>
+</body>
+</html>
