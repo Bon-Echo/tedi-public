@@ -67,6 +67,7 @@ let reconnectCount  = 0;
 let isMuted         = false;
 let isSpaceHeld     = false;
 let isThinking      = false;
+let assistantTurnActive = false;
 let playbackAnalyser = null;
 const MAX_RECONNECTS = 3;
 const RECONNECT_DELAY= 2000;
@@ -233,6 +234,7 @@ function handleServerMessage(msg) {
     case 'thinking_start':
       log('Tedi is thinking...');
       isThinking = true;
+      assistantTurnActive = true;
       setStatus('Thinking', 'thinking');
       break;
 
@@ -242,6 +244,7 @@ function handleServerMessage(msg) {
       currentRequestId = msg.request_id;
       mp3Chunks        = [];
       isThinking = false;
+      assistantTurnActive = true;
       setStatus('Speaking...', 'speaking');
       if (msg.spoken_text) {
         addTranscriptMessage('tedi', msg.spoken_text);
@@ -353,6 +356,7 @@ function pollPlaybackLevel() {
 function finishPlayback() {
   isPlaying = false;
   isThinking = false;
+  assistantTurnActive = false;
   if (window.TediOrb) TediOrb.setPlaybackLevel(0);
   setStatus(idleStatusText(), 'listening');
   if (ws && ws.readyState === WebSocket.OPEN && currentRequestId) {
@@ -372,6 +376,7 @@ function stopPlayback() {
   mp3Chunks        = [];
   isPlaying        = false;
   isThinking       = false;
+  assistantTurnActive = false;
   currentRequestId = null;
   if (window.TediOrb) TediOrb.setPlaybackLevel(0);
   if (!sessionEnded) setStatus(idleStatusText(), 'listening');
@@ -502,9 +507,11 @@ function pttStart() {
 
   if (pttHintEl) pttHintEl.classList.add('active');
 
-  // If Tedi is speaking, barge-in: stop playback immediately (keeps the
-  // already-rendered assistant message in the transcript) and notify server.
-  if (isPlaying) {
+  // If an assistant turn is in-flight (thinking OR speaking), barge-in: the
+  // server drops speech_final while turn_state is PROCESSING/SPEAKING, so we
+  // MUST send barge_in first to reset turn_state to IDLE. Any already-rendered
+  // assistant transcript bubble is preserved.
+  if (assistantTurnActive) {
     log('PTT barge-in');
     stopPlayback();
     if (ws && ws.readyState === WebSocket.OPEN) {
