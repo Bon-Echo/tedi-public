@@ -1,0 +1,8 @@
+# Real user audio and bespoke manifests stay local-only — never commit
+# customer-spoken recordings or transcripts to the public repo. The
+# example manifest and this directory's placeholder are the only checked-in
+# files here.
+*
+!.gitignore
+!.gitkeep
+!manifest.example.jsonl
