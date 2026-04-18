@@ -47,6 +47,7 @@ jobs:
       TF_VAR_elevenlabs_api_key: ${{ secrets.ELEVENLABS_API_KEY }}
       TF_VAR_elevenlabs_voice_id: ${{ secrets.ELEVENLABS_VOICE_ID }}
       TF_VAR_deepgram_api_key: ${{ secrets.DEEPGRAM_API_KEY }}
+      TF_VAR_admin_session_secret: ${{ secrets.ADMIN_SESSION_SECRET }}
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
       TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
 
