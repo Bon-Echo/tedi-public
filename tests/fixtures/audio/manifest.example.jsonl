@@ -1,0 +1,6 @@
+# Example manifest — copy to manifest.jsonl, drop real clips alongside it,
+# and supply ground-truth transcripts. Blank lines and whole-line comments
+# that start with `#` are ignored by the loader.
+#
+# {"audio":"clip_001.wav","reference":"we dispatch trucks every morning","duration_s":3.8,"speaker_accent":"us_general"}
+# {"audio":"clip_002.wav","reference":"hey tedi our fleet has about forty vehicles","duration_s":4.6,"speaker_accent":"south_asian"}
