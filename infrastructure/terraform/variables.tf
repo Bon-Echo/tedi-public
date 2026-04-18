@@ -97,6 +97,12 @@ variable "deepgram_api_key" {
   sensitive   = true
 }
 
+variable "admin_session_secret" {
+  description = "Signed-cookie secret for Tedi admin sessions"
+  type        = string
+  sensitive   = true
+}
+
 variable "slack_webhook_url" {
   description = "Slack incoming webhook URL for #board-room notifications"
   type        = string
